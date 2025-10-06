@@ -59,31 +59,45 @@ def random_walk(start_smiles: str, n_steps: int, fitness_functions: list[Functio
         list[bool]: Whether each molecule encountered is valid
         list[float]: Fitnesses scores for each molecule encountered
     """
+    dp.setup_default_action_space(with_add_group=True, with_remove_group=True)
     evaluations = dp.setup_filters("chembl_zinc")
-    print(start_smiles)
     start_mol = Molecule(start_smiles)
+
+    print("----------Step 0----------")
+    print("Molecule: ", start_smiles)
 
     path: list[str] = [start_smiles]
     are_valid: list[bool] = [evaluator.is_valid_molecule(start_mol, evaluations)]
+    print("Is valid: ", are_valid[0])
+
     fitnesses: list[float] = []
 
-    for fitness_function in fitness_functions:
+    for fitness_function, i in zip(fitness_functions, range(len(fitness_functions))):
         try:
             fitnesses.append([fitness_function._evaluate(start_mol)])
-            print(fitnesses)
+            print(fitness_function.name, ": ", fitnesses[i][0])
         except ModuleNotFoundError:
             print("No fitness function named " + fitness_function, file=sys.stderr)
             exit(1)
 
+    print()
+
     for step in range(n_steps):
+        print("----------Step " + str(step + 1) + "----------")
+
         rand_neighbor = get_random_neighbor(start_smiles)
         rand_neighbor_mol = Molecule(rand_neighbor)
+        print("Molecule: ", rand_neighbor)
 
         path.append(rand_neighbor)
         are_valid.append(evaluator.is_valid_molecule(rand_neighbor_mol, evaluations))
+        print("Is valid: ", (are_valid[-1]))
 
         for fitness_function, i in zip(fitness_functions, range(len(fitness_functions))):
-            fitnesses[i].append(fitness_functions(rand_neighbor_mol))
+            fitnesses[i].append(fitness_function._evaluate(rand_neighbor_mol))
+            print(fitness_function.name + ": ", fitnesses[i][-1])
+
+        print()
 
     return path, are_valid, fitnesses
 
@@ -107,8 +121,6 @@ def fitness_correlation(start_smiles: str, n_steps: int,
     path, are_valid, fitnesses = cast(tuple[list[str], list[bool], list[float]],
                                       random_walk(start_smiles, n_steps, fitness_functions))
 
-    print(fitnesses)
-
     return 0
 
 
@@ -120,10 +132,8 @@ def main() -> None:
         "CN1C(=NC2=C1C(=O)N(C(=O)N2C)C)CO"  # Caffeine
     ]
 
-    max_heavy_atoms = 38
-
     for smi in smiles:
-        fitness_correlation(smi, 1000, [SAScore, Silly_walk],
+        fitness_correlation(smi, 10, [SAScore, Silly_walk],
                             [TanimotoSimilarity, levenshtein])
 
 if __name__ == "__main__":
