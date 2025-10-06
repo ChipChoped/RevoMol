@@ -11,6 +11,7 @@ from rdkit.Chem.rdFingerprintGenerator import GetRDKitFPGenerator
 
 from Levenshtein import distance as levenshtein
 
+from evomol.action.molecular_graph.action_molecular_graph import ActionMolGraph
 
 # Add the parent directory to the path to import the module evomol
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -23,14 +24,24 @@ from evomol.representation import MolecularGraph, Molecule
 from evomol.search import enumeration as en
 from evomol.evaluation import Function
 from evomol.evaluation.qed import QED
-from evomol.evaluation.sa_score import SAScore
-from evomol.evaluation.logp import LogP
+from evomol.evaluation.sa_score import SAScore, zinc_normalized_sa_score, NormalizedSAScore
+from evomol.evaluation.logp import LogP, zinc_normalized_log_p, ZincNormalizedLogP
 from evomol.evaluation.plogp import PLogP
-from evomol.evaluation.silly_walks import Silly_walk
+from evomol.evaluation.silly_walks import Silly_Walks
+from evomol.evaluation.cycle_score import zinc_normalized_cycle_score, NormalizedCycleScore, CycleScore
+from evomol.action import molecular_graph as mg
 
 
 def get_random_neighbor(start_smiles: str) -> str:
-    """Get a random neighbor for a molecule without looking if it is realistic."""
+    """
+    Get a random neighbor for a molecule without looking if it is realistic.
+
+    Arg:
+        start_smiles (str): The smiles of the starting molecule
+
+    Return:
+        str: A random neighbor of the molecule
+    """
     # convert the starting SMILES to its canonical form
     can_smi_start = (
         Molecule(start_smiles).get_representation(MolecularGraph).canonical_smiles
@@ -44,14 +55,15 @@ def get_random_neighbor(start_smiles: str) -> str:
         return random.choice(list(smiles_set))
 
 
-def random_walk(start_smiles: str, n_steps: int, fitness_functions: list[Function]
-                )-> tuple[list[str], list[bool], list[float]]:
+def random_walk(start_smiles: str, n_steps: int, action_space: list[ActionMolGraph],
+                fitness_functions: list[Function])-> tuple[list[str], list[bool], list[float]]:
     """
     Perform a random walk with a starting molecule and a set of allowed action.
 
     Args:
         start_smiles (str): The smiles of the starting molecule
         n_steps (int): The number of steps to perform
+        action_space(ActionMolGraph): Actions allowed to perform
         fitness_functions (list[Function]): A list of fitness functions
 
     Returns:
@@ -59,29 +71,44 @@ def random_walk(start_smiles: str, n_steps: int, fitness_functions: list[Functio
         list[bool]: Whether each molecule encountered is valid
         list[float]: Fitnesses scores for each molecule encountered
     """
-    dp.setup_default_action_space(with_add_group=True, with_remove_group=True)
+    # Initialize and set the action space
+    dp.setup_default_action_space()
+    MolecularGraph.action_space = action_space
+
     evaluations = dp.setup_filters("chembl_zinc")
     start_mol = Molecule(start_smiles)
 
     print("----------Step 0----------")
     print("Molecule: ", start_smiles)
 
-    path: list[str] = [start_smiles]
-    are_valid: list[bool] = [evaluator.is_valid_molecule(start_mol, evaluations)]
+    path: list[str] = [start_smiles]  # All molecules encountered
+    are_valid: list[bool] = [evaluator.is_valid_molecule(start_mol, evaluations)]  # Validity of molecules encountered
     print("Is valid: ", are_valid[0])
 
-    fitnesses: list[float] = []
+    fitnesses: list[float] = []  # All fitnesses of molecules encountered
 
     for fitness_function, i in zip(fitness_functions, range(len(fitness_functions))):
-        try:
-            fitnesses.append([fitness_function._evaluate(start_mol)])
-            print(fitness_function.name, ": ", fitnesses[i][0])
-        except ModuleNotFoundError:
-            print("No fitness function named " + fitness_function, file=sys.stderr)
-            exit(1)
+        # Evaluation needed for the PlogP calculation
+        if fitness_function.name == "PLogP":
+            start_mol.set_value("zinc_normalized_logP",
+                                ZincNormalizedLogP.evaluate(start_mol))
+            start_mol.set_value("zinc_normalized_sa_score",
+                                NormalizedSAScore.evaluate(start_mol))
+            start_mol.set_value("CycleScore",
+                                CycleScore.evaluate(start_mol))
+            start_mol.set_value("zinc_normalized_cycle_score",
+                                NormalizedCycleScore.evaluate(start_mol))
+
+        fitness = fitness_function.evaluate(start_mol)
+        fitnesses.append([fitness])
+        start_mol.set_value(fitness_function.name, fitness)
+
+        print(fitness_function.name, ": ", fitnesses[i][0])
 
     print()
 
+    # At each step a random candidate of the molecule neighbor is chosen
+    # Its validity and all its fitnesses are computed and saved
     for step in range(n_steps):
         print("----------Step " + str(step + 1) + "----------")
 
@@ -94,15 +121,30 @@ def random_walk(start_smiles: str, n_steps: int, fitness_functions: list[Functio
         print("Is valid: ", (are_valid[-1]))
 
         for fitness_function, i in zip(fitness_functions, range(len(fitness_functions))):
-            fitnesses[i].append(fitness_function._evaluate(rand_neighbor_mol))
+            if fitness_function.name == "PLogP":
+                rand_neighbor_mol.set_value("zinc_normalized_logP",
+                                            ZincNormalizedLogP.evaluate(rand_neighbor_mol))
+                rand_neighbor_mol.set_value("zinc_normalized_sa_score",
+                                            NormalizedSAScore.evaluate(rand_neighbor_mol))
+                rand_neighbor_mol.set_value("CycleScore",
+                                            CycleScore.evaluate(rand_neighbor_mol))
+                rand_neighbor_mol.set_value("zinc_normalized_cycle_score",
+                                            NormalizedCycleScore.evaluate(rand_neighbor_mol))
+
+            fitness = fitness_function.evaluate(rand_neighbor_mol)
+            fitnesses[i].append(fitness)
+            rand_neighbor_mol.set_value(fitness_function.name, fitness)
+
             print(fitness_function.name + ": ", fitnesses[i][-1])
+
+        start_smiles = rand_neighbor
 
         print()
 
     return path, are_valid, fitnesses
 
 
-def fitness_correlation(start_smiles: str, n_steps: int,
+def fitness_correlation(start_smiles: str, n_steps: int, action_space: list[ActionMolGraph],
                         fitness_functions: list[Function], distance_functions: list[str]) -> float:
     """
     Compute the fitness correlation between a starting molecule and molecules encountered during a random walk.
@@ -110,6 +152,7 @@ def fitness_correlation(start_smiles: str, n_steps: int,
     Args:
         start_smiles (str): The smiles of the starting molecule
         n_steps (int): The number of steps to perform
+        action_space(ActionMolGraph): Actions allowed to perform
         fitness_functions (list[Function]): A list of fitness functions
         distance_functions (list[str]): A list of distance functions
 
@@ -119,7 +162,7 @@ def fitness_correlation(start_smiles: str, n_steps: int,
     dp.setup_default_parameters()
 
     path, are_valid, fitnesses = cast(tuple[list[str], list[bool], list[float]],
-                                      random_walk(start_smiles, n_steps, fitness_functions))
+                                      random_walk(start_smiles, n_steps, action_space, fitness_functions))
 
     return 0
 
@@ -133,7 +176,8 @@ def main() -> None:
     ]
 
     for smi in smiles:
-        fitness_correlation(smi, 10, [SAScore, Silly_walk],
+        fitness_correlation(smi, 10, [mg.AddAtomMG, mg.RemoveAtomMG],
+                            [QED, SAScore, LogP, PLogP, Silly_Walks],
                             [TanimotoSimilarity, levenshtein])
 
 if __name__ == "__main__":
