@@ -36,7 +36,7 @@ from evomol.representation import Molecule
 from evomol.evaluation.evaluation import Function
 
 
-def silly_walks(molecule: Molecule, radius: int=2):
+def silly_walks(molecule: Molecule, radius: int=2) -> float:
     """
     Calculate the silliness of a molecule (its non-realism)
 
@@ -48,7 +48,6 @@ def silly_walks(molecule: Molecule, radius: int=2):
         float: Sillywalk score
     """
     if molecule:
-        # smiles =
         molecule = rdkit.Chem.rdmolfiles.MolFromSmiles(molecule.id_representation.smiles)
         fp = AllChem.GetMorganFingerprint(molecule, radius=radius)
         on_bits = fp.GetNonzeroElements().keys()
@@ -61,6 +60,6 @@ def silly_walks(molecule: Molecule, radius: int=2):
 
     else:
         score = 1
-    return score, [score]
+    return score
 
 Silly_walk = Function("Silly_walks", silly_walks)
