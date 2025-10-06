@@ -145,10 +145,22 @@ def random_walk(start_smiles: str, n_steps: int, action_space: list[ActionMolGra
     return path, are_valid, fitnesses
 
 
-def fitness_correlation(start_smiles: str, n_steps: int, action_space: list[ActionMolGraph],
-                        fitness_functions: list[Function], distance_functions: list[str]) -> float:
+def fitness_correlation(fitnesses: list[float], k:int=1) -> list[float]:
     """
-    Compute the fitness correlation between a starting molecule and molecules encountered during a random walk.
+    Compute the correlation coefficient of a list of fitnesses with gap of size k.
+
+    Args:
+        fitnesses (list[float]): A list of fitness scores
+    Return:
+        list[float]: The correlation coefficient
+    """
+    return np.corrcoef(fitnesses[:-1][::k], fitnesses[1:][::k])[0, 1]
+
+
+def correlations(start_smiles: str, n_steps: int, action_space: list[ActionMolGraph],
+                 fitness_functions: list[Function], distance_functions: list[str]) -> float:
+    """
+    Compute the fitnesses correlations and the distances-fitnesses correlations between a starting molecule and molecules encountered during a random walk.
 
     Args:
         start_smiles (str): The smiles of the starting molecule
@@ -158,12 +170,19 @@ def fitness_correlation(start_smiles: str, n_steps: int, action_space: list[Acti
         distance_functions (list[str]): A list of distance functions
 
     Return:
-        float: The fitnesses correlation scores
+        list[float]: A list of fitnesses correlation
+        list[float]: A list of distances-fitnesses correlation
     """
     dp.setup_default_parameters()
 
-    path, are_valid, fitnesses = cast(tuple[list[str], list[bool], list[float]],
+    path, are_valid, all_fitnesses = cast(tuple[list[str], list[bool], dict[list[float]]],
                                       random_walk(start_smiles, n_steps, action_space, fitness_functions))
+
+    print("---Correlation coefficient(s)---")
+    print()
+
+    for function_name, fitnesses in zip(all_fitnesses.keys(), all_fitnesses.values()):
+        print(function_name + ": ", fitness_correlation(fitnesses))
 
     return 0
 
@@ -177,9 +196,12 @@ def main() -> None:
     ]
 
     for smi in smiles:
-        fitness_correlation(smi, 10, [mg.AddAtomMG, mg.RemoveAtomMG],
-                            [QED, SAScore, LogP, PLogP, Silly_Walks],
-                            [TanimotoSimilarity, levenshtein])
+        correlations(smi, 5, [mg.AddAtomMG, mg.RemoveAtomMG],
+                     [QED, SAScore, LogP, PLogP, Silly_Walks],
+                     [TanimotoSimilarity, levenshtein])
+
+        print()
+        print()
 
 if __name__ == "__main__":
     main()
