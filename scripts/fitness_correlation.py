@@ -137,6 +137,7 @@ def random_walk(start_smiles: str, n_steps: int, action_space: list[ActionMolGra
 
             print(fitness_function.name + ": ", fitnesses[i][-1])
 
+        path.append(rand_neighbor)
         start_smiles = rand_neighbor
 
         print()
