@@ -24,17 +24,14 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
-import os
 import json
+import os
 
-import rdkit.Chem
-from rdkit.Chem import AllChem
+from rdkit import RDLogger
+from rdkit.Chem import rdmolfiles, AllChem
 
-from evomol import default_parameters as dp
-from evomol.evaluation import ecfp4
-from evomol.representation import Molecule
 from evomol.evaluation.evaluation import Function
-
+from evomol.representation import Molecule
 
 def silly_walks(molecule: Molecule, radius: int=2) -> float:
     """
@@ -48,7 +45,11 @@ def silly_walks(molecule: Molecule, radius: int=2) -> float:
         float: Sillywalk score
     """
     if molecule:
-        molecule = rdkit.Chem.rdmolfiles.MolFromSmiles(molecule.id_representation.smiles)
+        # Suppress further warnings from rdkit
+        # A fix will be made to permanently remove the warning
+        RDLogger.DisableLog('rdApp.warning')
+
+        molecule = rdmolfiles.MolFromSmiles(molecule.id_representation.smiles)
         fp = AllChem.GetMorganFingerprint(molecule, radius=radius)
         on_bits = fp.GetNonzeroElements().keys()
 
@@ -57,9 +58,9 @@ def silly_walks(molecule: Molecule, radius: int=2) -> float:
 
         silly_bits: list = [x for x in [ecfp4_dict.get(str(x)) for x in on_bits] if x is None]
         score: float = len(silly_bits) / len(on_bits) if len(on_bits) > 0 else 0
-
     else:
         score = 1
+
     return score
 
 Silly_walk = Function("Silly_walks", silly_walks)
