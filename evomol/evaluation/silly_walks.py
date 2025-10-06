@@ -63,4 +63,4 @@ def silly_walks(molecule: Molecule, radius: int=2) -> float:
 
     return score
 
-Silly_walk = Function("Silly_walks", silly_walks)
+Silly_Walks = Function("Silly_Walks", silly_walks)
