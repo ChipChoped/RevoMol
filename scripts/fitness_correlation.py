@@ -39,7 +39,7 @@ def get_random_neighbor(start_smiles: str) -> str:
     Return:
         str: A random neighbor of the molecule
     """
-    # convert the starting SMILES to its canonical form
+    # Convert the starting SMILES to its canonical form
     can_smi_start = (
         Molecule(start_smiles).get_representation(MolecularGraph).canonical_smiles
     )
@@ -76,11 +76,11 @@ def random_walk(start_smiles: str, n_steps: int, action_space: list[ActionMolGra
     start_mol = Molecule(start_smiles)
 
     print("----------Step 0----------")
-    print("Molecule: ", start_smiles)
+    print("Molecule:", start_smiles)
 
     path: list[str] = [start_smiles]  # All molecules encountered
     are_valid: list[bool] = [evaluator.is_valid_molecule(start_mol, evaluations)]  # Validity of molecules encountered
-    print("Is valid: ", are_valid[0])
+    print("Is valid:", are_valid[0])
 
     fitnesses: dict[list[float]] = dict()  # All fitnesses of molecules encountered
 
@@ -113,11 +113,11 @@ def random_walk(start_smiles: str, n_steps: int, action_space: list[ActionMolGra
 
         rand_neighbor = get_random_neighbor(start_smiles)
         rand_neighbor_mol = Molecule(rand_neighbor)
-        print("Molecule: ", rand_neighbor)
+        print("Molecule:", rand_neighbor)
 
         path.append(rand_neighbor)
         are_valid.append(evaluator.is_valid_molecule(rand_neighbor_mol, evaluations))
-        print("Is valid: ", (are_valid[-1]))
+        print("Is valid:", (are_valid[-1]))
 
         for fitness_function, i in zip(fitness_functions, range(len(fitness_functions))):
             function_name = fitness_function.name
@@ -136,7 +136,7 @@ def random_walk(start_smiles: str, n_steps: int, action_space: list[ActionMolGra
             fitnesses[function_name].append(fitness)
             rand_neighbor_mol.set_value(function_name, fitness)
 
-            print(function_name + ": ", fitnesses[fitness_function.name][-1])
+            print(function_name + ":", fitnesses[fitness_function.name][-1])
 
         path.append(rand_neighbor)
         start_smiles = rand_neighbor
@@ -162,7 +162,8 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[ActionMolGr
                  fitness_functions: list[Function], distance_functions: list[Distance],
                  distance_size: int=1) -> float:
     """
-    Compute the fitnesses correlations and the distances-fitnesses correlations between a starting molecule and molecules encountered during a random walk.
+    Compute the fitnesses correlations and the distances-fitnesses correlations between a starting molecule
+    and molecules encountered during a random walk.
 
     Args:
         start_smiles (str): The smiles of the starting molecule
