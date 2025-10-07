@@ -26,7 +26,7 @@ from evomol.evaluation.logp import LogP, ZincNormalizedLogP
 from evomol.evaluation.plogp import PLogP
 from evomol.evaluation.silly_walks import Silly_Walks
 from evomol.evaluation.cycle_score import NormalizedCycleScore, CycleScore
-from evomol.action import molecular_graph as mg
+from evomol.action import molecular_graph as mg, Action
 
 
 def get_random_neighbor(start_smiles: str) -> str:
@@ -52,8 +52,8 @@ def get_random_neighbor(start_smiles: str) -> str:
         return random.choice(list(smiles_set))
 
 
-def random_walk(start_smiles: str, n_steps: int, action_space: list[ActionMolGraph],
-                fitness_functions: list[Function])-> tuple[list[str], list[bool], list[float]]:
+def random_walk(start_smiles: str, n_steps: int, action_space: list[type[Action]],
+                fitness_functions: list[Function])-> tuple[list[str], list[bool], dict[str, list[float]]]:
     """
     Perform a random walk with a starting molecule and a set of allowed action.
 
@@ -66,7 +66,7 @@ def random_walk(start_smiles: str, n_steps: int, action_space: list[ActionMolGra
     Returns:
         list[str]: The path took during the random walk (list of smiles)
         list[bool]: Whether each molecule encountered is valid
-        dict[list[float]]: Dictionary of fitnesses score for each molecule encountered
+        dict[list[float]]: Dictionary of fitnesses scores for each molecule encountered
     """
     # Initialize and set the action space
     dp.setup_default_action_space()
@@ -82,7 +82,7 @@ def random_walk(start_smiles: str, n_steps: int, action_space: list[ActionMolGra
     are_valid: list[bool] = [evaluator.is_valid_molecule(start_mol, evaluations)]  # Validity of molecules encountered
     print("Is valid:", are_valid[0])
 
-    fitnesses: dict[list[float]] = dict()  # All fitnesses of molecules encountered
+    fitnesses: dict[str, list[float]] = dict()  # All fitnesses of molecules encountered
 
     for fitness_function, i in zip(fitness_functions, range(len(fitness_functions))):
         # Evaluation needed for the PlogP calculation
@@ -152,14 +152,15 @@ def fitness_correlation(fitnesses: list[float], k:int=1) -> float:
 
     Args:
         fitnesses (list[float]): A list of fitness scores
+        k (int): The size of the gap between each fitness
     Return:
         list[float]: The correlation coefficient
     """
-    return np.corrcoef(fitnesses[:-1][::k], fitnesses[1:][::k])[0, 1]
+    return float(np.corrcoef(fitnesses[:-1][::k], fitnesses[1:][::k])[0, 1])
 
 
 def distance_fitness_correlation(fitnesses: list[float], distance_function: Distance, molecules: list[str], gap:int=1,
-                                 sample_size:int=1) -> tuple[float, list[float], list[float], list[(str, str)]]:
+                                 sample_size:int=1) -> tuple[float, list[float], list[float], list[tuple[str, str]]]:
     """
     Compute the correlation coefficient of a list of fitnesses with gap of size k.
 
@@ -174,11 +175,11 @@ def distance_fitness_correlation(fitnesses: list[float], distance_function: Dist
         float: The correlation coefficient
         list[float]: The sampled distances
         list[float]: The sampled delta fitness
-        list[(str, str)]: The sampled molecule pairs
+        list[tuple[str, str]]: The sampled molecule pairs
     """
     distance_samples: list[float] = []
     delta_fitness_samples: list[float] = []
-    molecule_samples: list[(str, str)] = []
+    molecule_samples: list[tuple[str, str]] = []
 
     possible_rands: list[int] = list(range(len(fitnesses) - gap))
 
@@ -190,11 +191,11 @@ def distance_fitness_correlation(fitnesses: list[float], distance_function: Dist
         delta_fitness_samples.append(fitnesses[rand_n + gap] - fitnesses[rand_n])
         molecule_samples.append((molecules[rand_n], molecules[rand_n + gap]))
 
-    return (np.corrcoef(distance_samples, delta_fitness_samples)[0, 1],
+    return (float(np.corrcoef(distance_samples, delta_fitness_samples)[0, 1]),
             delta_fitness_samples, distance_samples, molecule_samples)
 
 
-def correlations(start_smiles: str, n_steps: int, action_space: list[ActionMolGraph],
+def correlations(start_smiles: str, n_steps: int, action_space: list[type[Action]],
                  fitness_functions: list[Function], distance_functions: list[Distance],
                  distance_size: int=1) -> float:
     """
@@ -204,9 +205,10 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[ActionMolGr
     Args:
         start_smiles (str): The smiles of the starting molecule
         n_steps (int): The number of steps to perform
-        action_space(ActionMolGraph): Actions allowed to perform
+        action_space (list[type[Action]]): Actions allowed to perform
         fitness_functions (list[Function]): A list of fitness functions
         distance_functions (list[Distance]): A list of distance functions
+        distance_size (int): The size of the distance between two molecules
 
     Return:
         list[float]: A list of fitnesses correlation
@@ -214,17 +216,17 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[ActionMolGr
     """
     dp.setup_default_parameters()
 
-    path, are_valid, all_fitnesses = cast(tuple[list[str], list[bool], dict[list[float]]],
+    path, are_valid, all_fitnesses = cast(tuple[list[str], list[bool], dict[str, list[float]]],
                                       random_walk(start_smiles, n_steps, action_space, fitness_functions))
 
     print("\n---Correlation coefficient(s)---\n")
 
-    fitness_correlations: dict[list[float]] = dict()
-    distance_fitness_correlations: dict[dict[list[float]]] = dict()
+    fitness_correlations: dict[str, float] = dict()
+    distance_fitness_correlations: dict[str, dict[str, list[float]]] = dict()
 
-    sampled_fitness: dict[dict[list[list[float]]]] = dict(dict())
-    sampled_distances: dict[dict[list[list[float]]]] = dict(dict())
-    sampled_molecules: dict[dict[list[list[float]]]] = dict(dict())
+    sampled_fitness: dict[str, dict[str, list[list[float]]]] = dict(dict())
+    sampled_distances: dict[str, dict[str, list[list[float]]]] = dict(dict())
+    sampled_molecules: dict[str, dict[str, list[list[tuple[str, str]]]]] = dict(dict())
 
     for fitness_function_name, fitnesses in zip(all_fitnesses.keys(), all_fitnesses.values()):
         fitness_correlations[fitness_function_name] = fitness_correlation(fitnesses)
