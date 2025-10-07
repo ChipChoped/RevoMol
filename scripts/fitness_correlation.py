@@ -158,6 +158,42 @@ def fitness_correlation(fitnesses: list[float], k:int=1) -> float:
     return np.corrcoef(fitnesses[:-1][::k], fitnesses[1:][::k])[0, 1]
 
 
+def distance_fitness_correlation(fitnesses: list[float], distance_function: Distance, molecules: list[str], gap:int=1,
+                                 sample_size:int=1) -> tuple[float, list[float], list[float], list[(str, str)]]:
+    """
+    Compute the correlation coefficient of a list of fitnesses with gap of size k.
+
+    Args:
+        fitnesses (list[float]): A list of fitness scores
+        distance_function (Distance): A distance function
+        molecules (list[str]): A list of molecules
+        gap (int): The gap size between two sampled molecules
+        sample_size (int): The number of samples to use
+
+    Returns:
+        float: The correlation coefficient
+        list[float]: The sampled distances
+        list[float]: The sampled delta fitness
+        list[(str, str)]: The sampled molecule pairs
+    """
+    distance_samples: list[float] = []
+    delta_fitness_samples: list[float] = []
+    molecule_samples: list[(str, str)] = []
+
+    possible_rands: list[int] = list(range(len(fitnesses) - gap))
+
+    for _ in range(sample_size):
+        rand_n: int = random.choice(possible_rands)
+        possible_rands.remove(rand_n)
+
+        distance_samples.append(distance_function.distance(molecules[rand_n], molecules[rand_n + gap]))
+        delta_fitness_samples.append(fitnesses[rand_n + gap] - fitnesses[rand_n])
+        molecule_samples.append((molecules[rand_n], molecules[rand_n + gap]))
+
+    return (np.corrcoef(distance_samples, delta_fitness_samples)[0, 1],
+            delta_fitness_samples, distance_samples, molecule_samples)
+
+
 def correlations(start_smiles: str, n_steps: int, action_space: list[ActionMolGraph],
                  fitness_functions: list[Function], distance_functions: list[Distance],
                  distance_size: int=1) -> float:
@@ -181,11 +217,53 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[ActionMolGr
     path, are_valid, all_fitnesses = cast(tuple[list[str], list[bool], dict[list[float]]],
                                       random_walk(start_smiles, n_steps, action_space, fitness_functions))
 
-    print("---Correlation coefficient(s)---")
-    print()
+    print("\n---Correlation coefficient(s)---\n")
 
-    for function_name, fitnesses in zip(all_fitnesses.keys(), all_fitnesses.values()):
-        print(function_name + ": ", fitness_correlation(fitnesses))
+    fitness_correlations: dict[list[float]] = dict()
+    distance_fitness_correlations: dict[dict[list[float]]] = dict()
+
+    sampled_fitness: dict[dict[list[list[float]]]] = dict(dict())
+    sampled_distances: dict[dict[list[list[float]]]] = dict(dict())
+    sampled_molecules: dict[dict[list[list[float]]]] = dict(dict())
+
+    for fitness_function_name, fitnesses in zip(all_fitnesses.keys(), all_fitnesses.values()):
+        fitness_correlations[fitness_function_name] = fitness_correlation(fitnesses)
+
+        distance_fitness_correlations[fitness_function_name] = dict()
+        sampled_fitness[fitness_function_name] = dict()
+        sampled_distances[fitness_function_name] = dict()
+        sampled_molecules[fitness_function_name] = dict()
+
+        print(fitness_function_name)
+        print("-------------------------")
+        print("Fitness:", fitness_correlations[fitness_function_name])
+
+        for distance_function in distance_functions:
+            distance_function_name = distance_function.name
+
+            distance_fitness_correlations[fitness_function_name][distance_function_name]\
+                = []
+            sampled_fitness[fitness_function_name][distance_function_name] = []
+            sampled_distances[fitness_function_name][distance_function_name] = []
+            sampled_molecules[fitness_function_name][distance_function_name] = []
+
+            print(distance_function_name + ": ", end="")
+
+            for gap in range(0, distance_size):
+                df, f, d, m = distance_fitness_correlation(fitnesses, distance_function, path, gap + 1, n_steps // 10)
+
+                distance_fitness_correlations[fitness_function_name][distance_function_name].append(df)
+                sampled_fitness[fitness_function_name][distance_function_name].append(f)
+                sampled_distances[fitness_function_name][distance_function_name].append(d)
+                sampled_molecules[fitness_function_name][distance_function_name].append(m)
+
+                print("d" + str(gap + 1) + ":",
+                      distance_fitness_correlations[fitness_function_name][distance_function_name][gap],
+                      end=", ")
+
+            print("")
+
+        print()
 
     return 0
 
@@ -193,13 +271,13 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[ActionMolGr
 def main() -> None:
     """Compute the fitness correlation between molecules found during a random walk"""
     smiles = [
-        "C",
+        # "C",
         # "C(O)(=O)C1=C(OC(C)=O)C=CC=C1",  # Aspirin
-        # "CN1C(=NC2=C1C(=O)N(C(=O)N2C)C)CO"  # Caffeine
+        "CN1C(=NC2=C1C(=O)N(C(=O)N2C)C)CO"  # Caffeine
     ]
 
     for smi in smiles:
-        correlations(smi, 5, [mg.AddAtomMG, mg.RemoveAtomMG],
+        correlations(smi, 100, [mg.AddAtomMG, mg.RemoveAtomMG],
                      [QED, SAScore, LogP, PLogP, Silly_Walks],
                      [Tanimoto, Levenshtein], 3)
 
