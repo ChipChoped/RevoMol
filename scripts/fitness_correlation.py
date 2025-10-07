@@ -145,7 +145,7 @@ def random_walk(start_smiles: str, n_steps: int, action_space: list[ActionMolGra
     return path, are_valid, fitnesses
 
 
-def fitness_correlation(fitnesses: list[float], k:int=1) -> list[float]:
+def fitness_correlation(fitnesses: list[float], k:int=1) -> float:
     """
     Compute the correlation coefficient of a list of fitnesses with gap of size k.
 
