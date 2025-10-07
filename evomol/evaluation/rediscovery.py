@@ -2,7 +2,7 @@
 Rediscovery score based on the implementation of GuacaMol.
 
 Removed to avoid guacamol dependency.
-Look at scripts/tanimoto.py for an attempt to use only RDKit to calculate the
+Look at scripts/tanimoto_guacamol_test.py for an attempt to use only RDKit to calculate the
 similarity.
 
 Nathan Brown et al.
