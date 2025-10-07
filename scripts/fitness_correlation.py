@@ -4,10 +4,11 @@ import sys
 from typing import cast
 
 import numpy as np
-from Levenshtein import distance as levenshtein
-from rdkit.DataStructs import TanimotoSimilarity
 
 from evomol.action.molecular_graph.action_molecular_graph import ActionMolGraph
+from evomol.distance.distance import Distance
+from evomol.distance.levenshtein import Levenshtein
+from evomol.distance.tanimoto import Tanimoto
 
 # Add the parent directory to the path to import the module evomol
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -158,7 +159,8 @@ def fitness_correlation(fitnesses: list[float], k:int=1) -> float:
 
 
 def correlations(start_smiles: str, n_steps: int, action_space: list[ActionMolGraph],
-                 fitness_functions: list[Function], distance_functions: list[str]) -> float:
+                 fitness_functions: list[Function], distance_functions: list[Distance],
+                 distance_size: int=1) -> float:
     """
     Compute the fitnesses correlations and the distances-fitnesses correlations between a starting molecule and molecules encountered during a random walk.
 
@@ -167,7 +169,7 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[ActionMolGr
         n_steps (int): The number of steps to perform
         action_space(ActionMolGraph): Actions allowed to perform
         fitness_functions (list[Function]): A list of fitness functions
-        distance_functions (list[str]): A list of distance functions
+        distance_functions (list[Distance]): A list of distance functions
 
     Return:
         list[float]: A list of fitnesses correlation
@@ -198,7 +200,7 @@ def main() -> None:
     for smi in smiles:
         correlations(smi, 5, [mg.AddAtomMG, mg.RemoveAtomMG],
                      [QED, SAScore, LogP, PLogP, Silly_Walks],
-                     [TanimotoSimilarity, levenshtein])
+                     [Tanimoto, Levenshtein], 3)
 
         print()
         print()
