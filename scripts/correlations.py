@@ -1,10 +1,11 @@
+import csv
 import os
 import random
 import sys
+from datetime import datetime
 from typing import cast
 
 import numpy as np
-from IPython.utils.wildcard import is_type
 
 # Add the parent directory to the path to import the module evomol
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -28,6 +29,9 @@ from evomol.evaluation.plogp import PLogP
 from evomol.evaluation.silly_walks import Silly_Walks
 from evomol.evaluation.cycle_score import NormalizedCycleScore, CycleScore
 from evomol.action import molecular_graph as mg, Action
+
+
+TIMESTAMP = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
 
 def get_random_neighbor(start_smiles: str) -> str:
@@ -85,64 +89,85 @@ def random_walk(start_smiles: str, n_steps: int, action_space: list[type[Action]
 
     fitnesses: dict[str, list[float]] = dict()  # All fitnesses of molecules encountered
 
-    for fitness_function, i in zip(fitness_functions, range(len(fitness_functions))):
-        # Evaluation needed for the PlogP calculation
-        function_name = fitness_function.name
+    with open("./results/correlations/" + start_smiles + "_" + str(n_steps) + "_"
+              + "_".join([action.__name__ for action in action_space]) + "_"
+              + TIMESTAMP + ".csv", "a") as file:
 
-        if function_name == "PLogP":
-            start_mol.set_value("zinc_normalized_logP",
-                                ZincNormalizedLogP.evaluate(start_mol))
-            start_mol.set_value("zinc_normalized_sa_score",
-                                NormalizedSAScore.evaluate(start_mol))
-            start_mol.set_value("CycleScore",
-                                CycleScore.evaluate(start_mol))
-            start_mol.set_value("zinc_normalized_cycle_score",
-                                NormalizedCycleScore.evaluate(start_mol))
+        writer = csv.writer(file)
 
-        fitness = fitness_function.evaluate(start_mol)
-        fitnesses[function_name] = [fitness]
-        start_mol.set_value(function_name, fitness)
+        csv_row = ["smiles", "is_valid"]
+        csv_row.extend([function.__class__.__name__ for function in fitness_functions])
 
-        print(function_name, ": ", fitnesses[function_name][0])
-
-    print()
-
-    # At each step a random candidate of the molecule neighbor is chosen
-    # Its validity and all its fitnesses are computed and saved
-    for step in range(n_steps):
-        print("----------Step " + str(step + 1) + "----------")
-
-        rand_neighbor = get_random_neighbor(start_smiles)
-        rand_neighbor_mol = Molecule(rand_neighbor)
-        print("Molecule:", rand_neighbor)
-
-        path.append(rand_neighbor)
-        are_valid.append(evaluator.is_valid_molecule(rand_neighbor_mol, evaluations))
-        print("Is valid:", (are_valid[-1]))
+        writer.writerow(csv_row)
 
         for fitness_function, i in zip(fitness_functions, range(len(fitness_functions))):
+            # Evaluation needed for the PlogP calculation
             function_name = fitness_function.name
 
-            if fitness_function.name == "PLogP":
-                rand_neighbor_mol.set_value("zinc_normalized_logP",
-                                            ZincNormalizedLogP.evaluate(rand_neighbor_mol))
-                rand_neighbor_mol.set_value("zinc_normalized_sa_score",
-                                            NormalizedSAScore.evaluate(rand_neighbor_mol))
-                rand_neighbor_mol.set_value("CycleScore",
-                                            CycleScore.evaluate(rand_neighbor_mol))
-                rand_neighbor_mol.set_value("zinc_normalized_cycle_score",
-                                            NormalizedCycleScore.evaluate(rand_neighbor_mol))
+            if function_name == "PLogP":
+                start_mol.set_value("zinc_normalized_logP",
+                                    ZincNormalizedLogP.evaluate(start_mol))
+                start_mol.set_value("zinc_normalized_sa_score",
+                                    NormalizedSAScore.evaluate(start_mol))
+                start_mol.set_value("CycleScore",
+                                    CycleScore.evaluate(start_mol))
+                start_mol.set_value("zinc_normalized_cycle_score",
+                                    NormalizedCycleScore.evaluate(start_mol))
 
-            fitness = fitness_function.evaluate(rand_neighbor_mol)
-            fitnesses[function_name].append(fitness)
-            rand_neighbor_mol.set_value(function_name, fitness)
+            fitness = fitness_function.evaluate(start_mol)
+            fitnesses[function_name] = [fitness]
+            start_mol.set_value(function_name, fitness)
 
-            print(function_name + ":", fitnesses[fitness_function.name][-1])
+            print(function_name, ": ", fitnesses[function_name][0])
 
-        path.append(rand_neighbor)
-        start_smiles = rand_neighbor
+        csv_row = [start_smiles, are_valid[-1]]
+        csv_row.extend([fitness[-1] for fitness in fitnesses.values()])
+
+        writer.writerow(csv_row)
 
         print()
+
+        # At each step a random candidate of the molecule neighbor is chosen
+        # Its validity and all its fitnesses are computed and saved
+        for step in range(n_steps):
+            print("----------Step " + str(step + 1) + "----------")
+
+            rand_neighbor = get_random_neighbor(start_smiles)
+            rand_neighbor_mol = Molecule(rand_neighbor)
+            print("Molecule:", rand_neighbor)
+
+            path.append(rand_neighbor)
+            are_valid.append(evaluator.is_valid_molecule(rand_neighbor_mol, evaluations))
+            print("Is valid:", (are_valid[-1]))
+
+            for fitness_function, i in zip(fitness_functions, range(len(fitness_functions))):
+                function_name = fitness_function.name
+
+                if fitness_function.name == "PLogP":
+                    rand_neighbor_mol.set_value("zinc_normalized_logP",
+                                                ZincNormalizedLogP.evaluate(rand_neighbor_mol))
+                    rand_neighbor_mol.set_value("zinc_normalized_sa_score",
+                                                NormalizedSAScore.evaluate(rand_neighbor_mol))
+                    rand_neighbor_mol.set_value("CycleScore",
+                                                CycleScore.evaluate(rand_neighbor_mol))
+                    rand_neighbor_mol.set_value("zinc_normalized_cycle_score",
+                                                NormalizedCycleScore.evaluate(rand_neighbor_mol))
+
+                fitness = fitness_function.evaluate(rand_neighbor_mol)
+                fitnesses[function_name].append(fitness)
+                rand_neighbor_mol.set_value(function_name, fitness)
+
+                print(function_name + ":", fitnesses[fitness_function.name][-1])
+
+            path.append(rand_neighbor)
+            start_smiles = rand_neighbor
+
+            csv_row = [start_smiles, are_valid[-1]]
+            csv_row.extend([fitness[-1] for fitness in fitnesses.values()])
+
+            writer.writerow(csv_row)
+
+            print()
 
     return path, are_valid, fitnesses
 
@@ -311,6 +336,8 @@ def main() -> None:
                    "RemoveGroupMG\n"<
                    "SubstituteAtomMG\n"
                    )
+
+    os.makedirs("./results/correlations", exist_ok=True)
 
     correlations(smile, n_steps, action_space,
                  [QED, SAScore, LogP, PLogP, Silly_Walks],
