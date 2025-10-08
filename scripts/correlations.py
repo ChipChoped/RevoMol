@@ -4,14 +4,15 @@ import sys
 from typing import cast
 
 import numpy as np
+from IPython.utils.wildcard import is_type
+
+# Add the parent directory to the path to import the module evomol
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from evomol.action.molecular_graph.action_molecular_graph import ActionMolGraph
 from evomol.distance.distance import Distance
 from evomol.distance.levenshtein import Levenshtein
 from evomol.distance.tanimoto import Tanimoto
-
-# Add the parent directory to the path to import the module evomol
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 # pylint: disable=wrong-import-position, import-error
 
@@ -243,8 +244,7 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[type[Action
         for distance_function in distance_functions:
             distance_function_name = distance_function.name
 
-            distance_fitness_correlations[fitness_function_name][distance_function_name]\
-                = []
+            distance_fitness_correlations[fitness_function_name][distance_function_name] = []
             sampled_fitness[fitness_function_name][distance_function_name] = []
             sampled_distances[fitness_function_name][distance_function_name] = []
             sampled_molecules[fitness_function_name][distance_function_name] = []
@@ -252,7 +252,7 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[type[Action
             print(distance_function_name + ": ", end="")
 
             for gap in range(0, distance_size):
-                df, f, d, m = distance_fitness_correlation(fitnesses, distance_function, path, gap + 1, n_steps // 10)
+                df, f, d, m = distance_fitness_correlation(fitnesses, distance_function, path, gap + 1, n_steps // 100)
 
                 distance_fitness_correlations[fitness_function_name][distance_function_name].append(df)
                 sampled_fitness[fitness_function_name][distance_function_name].append(f)
@@ -272,19 +272,52 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[type[Action
 
 def main() -> None:
     """Compute the fitness correlation between molecules found during a random walk"""
-    smiles = [
-        # "C",
-        # "C(O)(=O)C1=C(OC(C)=O)C=CC=C1",  # Aspirin
-        "CN1C(=NC2=C1C(=O)N(C(=O)N2C)C)CO"  # Caffeine
+    args = sys.argv[1:]
+
+    if len(args) < 3:
+        raise Exception("Unexpected number of arguments"
+                        "Arg 1: SMILES of a molecule"
+                        "Arg 2: Number of steps to perform"
+                        "Arg 3: Actions to perform")
+
+    smile: str = args[0]
+    n_steps: int = int(args[1])
+    action_space: list[type[Action]] = []
+
+    actions: list[str] = [
+        "AddAtomMG",
+        "AddGroupMG",
+        "ChangeBondMG",
+        "CutAtomMG",
+        "InsertCarbonMG",
+        "MoveGroupMG",
+        "RemoveAtomMG",
+        "RemoveGroupMG",
+        "SubstituteAtomMG"
     ]
 
-    for smi in smiles:
-        correlations(smi, 100, [mg.AddAtomMG, mg.RemoveAtomMG],
-                     [QED, SAScore, LogP, PLogP, Silly_Walks],
-                     [Tanimoto, Levenshtein], 3)
+    for action in args[2].split(" "):
+        if action in actions:
+            action_space.append(eval("mg." + action))
+        else:
+            raise ("Actions must be in the following list:\n\n"
+                   "ddAtomMG\n"
+                   "AddGroupMG\n"
+                   "ChangeBondMG\n"
+                   "CutAtomMG\n"
+                   "InsertCarbonMG\n"
+                   "MoveGroupMG\n"
+                   "RemoveAtomMG\n"
+                   "RemoveGroupMG\n"<
+                   "SubstituteAtomMG\n"
+                   )
 
-        print()
-        print()
+    correlations(smile, n_steps, action_space,
+                 [QED, SAScore, LogP, PLogP, Silly_Walks],
+                 [Tanimoto, Levenshtein], 3)
+
+    print()
+    print()
 
 if __name__ == "__main__":
     main()
