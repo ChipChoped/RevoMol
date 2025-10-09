@@ -109,3 +109,5 @@ ENV/
 .idea/
 
 external_data/
+
+results/
