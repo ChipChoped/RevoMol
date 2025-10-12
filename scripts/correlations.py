@@ -313,7 +313,7 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[type[Action
 
             for fitness_function_name in distance_fitness_correlation_coefficient.keys():
                 for distance_function_name in distance_fitness_correlation_coefficient[fitness_function_name].keys():
-                    print(fitness_function_name + "-" + distance_function_name + ":",
+                    print(distance_function_name + "-" + fitness_function_name + ":",
                           distance_fitness_correlation_coefficient[fitness_function_name][distance_function_name])
 
                     writer.writerow([distance_function_name, fitness_function_name,
