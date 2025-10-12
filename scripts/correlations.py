@@ -89,14 +89,13 @@ def random_walk(start_smiles: str, n_steps: int, action_space: list[type[Action]
 
     fitnesses: dict[str, list[float]] = dict()  # All fitnesses of molecules encountered
 
-    with open("./results/correlations/" + start_smiles + "_" + str(n_steps) + "_"
-              + "_".join([action.__name__ for action in action_space]) + "_"
-              + TIMESTAMP + ".csv", "a") as file:
-
+    with open("./results/correlations/" + str(n_steps) + "/" + start_smiles + "/"
+              + "_".join([action.__name__ for action in MolecularGraph.action_space]) + "/"
+              + TIMESTAMP + "/random_walk.csv", "a", newline='') as file:
         writer = csv.writer(file)
 
         csv_row = ["smiles", "is_valid"]
-        csv_row.extend([function.__class__.__name__ for function in fitness_functions])
+        csv_row.extend([function.name for function in fitness_functions])
 
         writer.writerow(csv_row)
 
@@ -121,7 +120,7 @@ def random_walk(start_smiles: str, n_steps: int, action_space: list[type[Action]
             print(function_name, ": ", fitnesses[function_name][0])
 
         csv_row = [start_smiles, are_valid[-1]]
-        csv_row.extend([fitness[-1] for fitness in fitnesses.values()])
+        csv_row.extend(iter([str(fitness[-1]) for fitness in fitnesses.values()]))
 
         writer.writerow(csv_row)
 
@@ -159,11 +158,10 @@ def random_walk(start_smiles: str, n_steps: int, action_space: list[type[Action]
 
                 print(function_name + ":", fitnesses[fitness_function.name][-1])
 
-            path.append(rand_neighbor)
             start_smiles = rand_neighbor
 
             csv_row = [start_smiles, are_valid[-1]]
-            csv_row.extend([fitness[-1] for fitness in fitnesses.values()])
+            csv_row.extend(iter([str(fitness[-1]) for fitness in fitnesses.values()]))
 
             writer.writerow(csv_row)
 
@@ -185,14 +183,15 @@ def fitness_correlation(fitnesses: list[float], k:int=1) -> float:
     return float(np.corrcoef(fitnesses[:-1][::k], fitnesses[1:][::k])[0, 1])
 
 
-def distance_fitness_correlation(fitnesses: list[float], distance_function: Distance, molecules: list[str], gap:int=1,
-                                 sample_size:int=1) -> tuple[float, list[float], list[float], list[tuple[str, str]]]:
+def distance_fitness_correlation(all_fitnesses: dict[str, list[float]], distance_functions: list[Distance],
+                                 molecules: list[str], gap:int=1, sample_size:int=1)\
+    -> dict[str, dict[str, float]]:
     """
     Compute the correlation coefficient of a list of fitnesses with gap of size k.
 
     Args:
-        fitnesses (list[float]): A list of fitness scores
-        distance_function (Distance): A distance function
+        all_fitnesses (str, dict[list[float]]): A list of fitness scores
+        distance_functions (list[Distance]): A distance function
         molecules (list[str]): A list of molecules
         gap (int): The gap size between two sampled molecules
         sample_size (int): The number of samples to use
@@ -203,22 +202,57 @@ def distance_fitness_correlation(fitnesses: list[float], distance_function: Dist
         list[float]: The sampled delta fitness
         list[tuple[str, str]]: The sampled molecule pairs
     """
-    distance_samples: list[float] = []
-    delta_fitness_samples: list[float] = []
-    molecule_samples: list[tuple[str, str]] = []
+    path = "./results/correlations/" + str(len(molecules) - 1) + "/" + molecules[0] + "/"\
+           + "_".join([action.__name__ for action in MolecularGraph.action_space]) + "/" + TIMESTAMP
 
-    possible_rands: list[int] = list(range(len(fitnesses) - gap))
+    os.makedirs(path + "/samples", exist_ok=True)
 
-    for _ in range(sample_size):
-        rand_n: int = random.choice(possible_rands)
-        possible_rands.remove(rand_n)
+    with (open(path + "/samples/gap_" + str(gap)
+                + ".csv", "a", newline='') as file):
+        writer = csv.writer(file)
 
-        distance_samples.append(distance_function.distance(molecules[rand_n], molecules[rand_n + gap]))
-        delta_fitness_samples.append(fitnesses[rand_n + gap] - fitnesses[rand_n])
-        molecule_samples.append((molecules[rand_n], molecules[rand_n + gap]))
+        csv_row: list[str] = ["smiles_1", "smiles_2"]
+        csv_row.extend(all_fitnesses.keys())
+        csv_row.extend([distance.name for distance in distance_functions])
 
-    return (float(np.corrcoef(distance_samples, delta_fitness_samples)[0, 1]),
-            delta_fitness_samples, distance_samples, molecule_samples)
+        writer.writerow(csv_row)
+
+        sampled_steps: list[int] = random.sample(range(len(molecules) - gap), sample_size)
+
+        for step in sampled_steps:
+            delta_fitnesses: list[str] = []
+            distances: list[str] = []
+
+            mol_1 = molecules[step]
+            mol_2 = molecules[step + gap]
+
+            for fitness_function_name, fitnesses in zip(all_fitnesses.keys(), all_fitnesses.values()):
+                delta_fitnesses.append(str(fitnesses[step + gap] - fitnesses[step]))
+
+            for distance_function in distance_functions:
+                distances.append(str(distance_function.distance(mol_1, mol_2)))
+
+            csv_row = [mol_1, mol_2]
+            csv_row.extend(delta_fitnesses)
+            csv_row.extend(distances)
+
+            writer.writerow(csv_row)
+
+        distance_fitness_correlations: dict[str, dict[str, float]] = dict()
+
+        for fitness_function_name, fitnesses in zip(all_fitnesses.keys(), all_fitnesses.values()):
+            distance_fitness_correlations[fitness_function_name] = dict()
+
+            for distance_function in distance_functions:
+                distance_function_name = distance_function.name
+                distance_fitness_correlations[fitness_function_name][distance_function_name] = float(np.corrcoef(
+                    [fitnesses[step + gap] - fitnesses[step]
+                     for step in range(len(molecules) - gap)],
+                    [distance_function.distance(molecules[step], molecules[step + gap])
+                     for step in range(len(molecules) - gap)]
+                )[0, 1])
+
+        return distance_fitness_correlations
 
 
 def correlations(start_smiles: str, n_steps: int, action_space: list[type[Action]],
@@ -242,55 +276,52 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[type[Action
     """
     dp.setup_default_parameters()
 
-    path, are_valid, all_fitnesses = cast(tuple[list[str], list[bool], dict[str, list[float]]],
+    molecules, are_valid, all_fitnesses = cast(tuple[list[str], list[bool], dict[str, list[float]]],
                                       random_walk(start_smiles, n_steps, action_space, fitness_functions))
 
     print("\n---Correlation coefficient(s)---\n")
 
-    fitness_correlations: dict[str, float] = dict()
-    distance_fitness_correlations: dict[str, dict[str, list[float]]] = dict()
+    with open("./results/correlations/" + str(n_steps) + "/" + start_smiles + "/"
+              + "_".join([action.__name__ for action in action_space]) + "/"
+              + TIMESTAMP + "/fitness_correlations.csv", "a", newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(["fitness_function", "correlation_coefficient"])
 
-    sampled_fitness: dict[str, dict[str, list[list[float]]]] = dict(dict())
-    sampled_distances: dict[str, dict[str, list[list[float]]]] = dict(dict())
-    sampled_molecules: dict[str, dict[str, list[list[tuple[str, str]]]]] = dict(dict())
+        for fitness_function_name, fitnesses in zip(all_fitnesses.keys(), all_fitnesses.values()):
+            fitness_correlation_coefficient: float = fitness_correlation(fitnesses)
 
-    for fitness_function_name, fitnesses in zip(all_fitnesses.keys(), all_fitnesses.values()):
-        fitness_correlations[fitness_function_name] = fitness_correlation(fitnesses)
+            print(fitness_function_name + ":", fitness_correlation_coefficient)
+            writer.writerow([fitness_function_name, fitness_correlation_coefficient])
 
-        distance_fitness_correlations[fitness_function_name] = dict()
-        sampled_fitness[fitness_function_name] = dict()
-        sampled_distances[fitness_function_name] = dict()
-        sampled_molecules[fitness_function_name] = dict()
+    print()
 
-        print(fitness_function_name)
-        print("-------------------------")
-        print("Fitness:", fitness_correlations[fitness_function_name])
+    path = "./results/correlations/" + str(n_steps) + "/" + start_smiles + "/"\
+           + "_".join([action.__name__ for action in action_space]) + "/" + TIMESTAMP
 
-        for distance_function in distance_functions:
-            distance_function_name = distance_function.name
+    os.makedirs(path + "/distance_fitness_correlations", exist_ok=True)
 
-            distance_fitness_correlations[fitness_function_name][distance_function_name] = []
-            sampled_fitness[fitness_function_name][distance_function_name] = []
-            sampled_distances[fitness_function_name][distance_function_name] = []
-            sampled_molecules[fitness_function_name][distance_function_name] = []
+    for gap in range(1, distance_size + 1):
+        with (open(path + "/distance_fitness_correlations/gap_" + str(gap) + ".csv", "a", newline='') as file):
+            writer = csv.writer(file)
+            writer.writerow(["distance_function", "fitness_function", "correlation_coefficient"])
 
-            print(distance_function_name + ": ", end="")
+            distance_fitness_correlation_coefficient: dict[str, dict[str, float]]\
+                = distance_fitness_correlation(all_fitnesses, distance_functions, molecules, gap, n_steps // 10)
 
-            for gap in range(0, distance_size):
-                df, f, d, m = distance_fitness_correlation(fitnesses, distance_function, path, gap + 1, n_steps // 100)
+            print("Gap size:", gap)
+            print("-------------------------\n")
 
-                distance_fitness_correlations[fitness_function_name][distance_function_name].append(df)
-                sampled_fitness[fitness_function_name][distance_function_name].append(f)
-                sampled_distances[fitness_function_name][distance_function_name].append(d)
-                sampled_molecules[fitness_function_name][distance_function_name].append(m)
+            for fitness_function_name in distance_fitness_correlation_coefficient.keys():
+                for distance_function_name in distance_fitness_correlation_coefficient[fitness_function_name].keys():
+                    print(fitness_function_name + "-" + distance_function_name + ":",
+                          distance_fitness_correlation_coefficient[fitness_function_name][distance_function_name])
 
-                print("d" + str(gap + 1) + ":",
-                      distance_fitness_correlations[fitness_function_name][distance_function_name][gap],
-                      end=", ")
+                    writer.writerow([distance_function_name, fitness_function_name,
+                                     distance_fitness_correlation_coefficient
+                                     [fitness_function_name][distance_function_name]])
 
-            print("")
-
-        print()
+                print()
+            print()
 
     return 0
 
@@ -305,7 +336,7 @@ def main() -> None:
                         "Arg 2: Number of steps to perform"
                         "Arg 3: Actions to perform")
 
-    smile: str = args[0]
+    smiles: str = args[0]
     n_steps: int = int(args[1])
     action_space: list[type[Action]] = []
 
@@ -337,9 +368,10 @@ def main() -> None:
                    "SubstituteAtomMG\n"
                    )
 
-    os.makedirs("./results/correlations", exist_ok=True)
+    os.makedirs("./results/correlations/" + str(n_steps) + "/" + smiles + "/" + args[2].replace(" ", "_")
+                + "/" + TIMESTAMP, exist_ok=True)
 
-    correlations(smile, n_steps, action_space,
+    correlations(smiles, n_steps, action_space,
                  [QED, SAScore, LogP, PLogP, Silly_Walks],
                  [Tanimoto, Levenshtein], 3)
 
