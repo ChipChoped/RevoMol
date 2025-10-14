@@ -8,6 +8,8 @@ molecules=(
 
 n_steps=1000
 
+only_valid=1
+
 action_spaces=(
     "AddAtomMG"
     "RemoveAtomMG"
@@ -20,6 +22,6 @@ for molecule in "${molecules[@]}"
 do
     for action_space in "${action_spaces[@]}"
     do
-        python ./scripts/correlations.py "$molecule" "$n_steps" "$action_space"
+        python ./scripts/correlations.py "$molecule" "$n_steps" "$only_valid" "$action_space"
     done
 done

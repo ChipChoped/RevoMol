@@ -34,12 +34,13 @@ from evomol.action import molecular_graph as mg, Action
 TIMESTAMP = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
 
-def get_random_neighbor(start_smiles: str) -> str:
+def get_random_neighbor(start_smiles: str, only_valid: bool=True) -> str:
     """
     Get a random neighbor for a molecule without looking if it is realistic.
 
     Arg:
         start_smiles (str): The smiles of the starting molecule
+        only_valid (bool): If true, only valid smiles will be returned.
 
     Return:
         str: A random neighbor of the molecule
@@ -51,6 +52,14 @@ def get_random_neighbor(start_smiles: str) -> str:
 
     smiles_set: set[str] = en.find_neighbors(Molecule(can_smi_start), 1)
 
+    if only_valid:
+        evaluations = dp.setup_filters("chembl_zinc")
+
+        valid_smiles: set[str] = {smiles for smiles in smiles_set
+                                  if evaluator.is_valid_molecule(Molecule(smiles), evaluations)}
+
+        smiles_set = valid_smiles
+
     if len(smiles_set) == 0:
         return ""
     else:
@@ -58,7 +67,8 @@ def get_random_neighbor(start_smiles: str) -> str:
 
 
 def random_walk(start_smiles: str, n_steps: int, action_space: list[type[Action]],
-                fitness_functions: list[Function])-> tuple[list[str], list[bool], dict[str, list[float]]]:
+                fitness_functions: list[Function], only_valid: bool=True)\
+    -> tuple[list[str], list[bool], dict[str, list[float]]]:
     """
     Perform a random walk with a starting molecule and a set of allowed action.
 
@@ -67,6 +77,7 @@ def random_walk(start_smiles: str, n_steps: int, action_space: list[type[Action]
         n_steps (int): The number of steps to perform
         action_space(ActionMolGraph): Actions allowed to perform
         fitness_functions (list[Function]): A list of fitness functions
+        only_valid (bool): If True, only valid molecules will be kept during the random walk
 
     Returns:
         list[str]: The path took during the random walk (list of smiles)
@@ -87,11 +98,13 @@ def random_walk(start_smiles: str, n_steps: int, action_space: list[type[Action]
     are_valid: list[bool] = [evaluator.is_valid_molecule(start_mol, evaluations)]  # Validity of molecules encountered
     print("Is valid:", are_valid[0])
 
+    only_valid_str: str = "only_valid" if only_valid else "not_all_valid"
+
     fitnesses: dict[str, list[float]] = dict()  # All fitnesses of molecules encountered
 
-    with open("./results/correlations/" + str(n_steps) + "/" + start_smiles + "/"
-              + "_".join([action.__name__ for action in MolecularGraph.action_space]) + "/"
-              + TIMESTAMP + "/random_walk.csv", "a", newline='') as file:
+    with open("./results/correlations/" + only_valid_str + "/" + str(n_steps) + "/" + start_smiles + "/"
+              + "_".join([action.__name__ for action in MolecularGraph.action_space])
+              + "/random_walk.csv", "a", newline='') as file:
         writer = csv.writer(file)
 
         csv_row = ["smiles", "is_valid"]
@@ -131,7 +144,7 @@ def random_walk(start_smiles: str, n_steps: int, action_space: list[type[Action]
         for step in range(n_steps):
             print("----------Step " + str(step + 1) + "----------")
 
-            rand_neighbor = get_random_neighbor(start_smiles)
+            rand_neighbor = get_random_neighbor(start_smiles, only_valid)
             rand_neighbor_mol = Molecule(rand_neighbor)
             print("Molecule:", rand_neighbor)
 
@@ -184,7 +197,7 @@ def fitness_correlation(fitnesses: list[float], k:int=1) -> float:
 
 
 def distance_fitness_correlation(all_fitnesses: dict[str, list[float]], distance_functions: list[Distance],
-                                 molecules: list[str], gap:int=1, sample_size:int=1)\
+                                 molecules: list[str], gap:int=1, sample_size:int=1, only_valid: bool=True)\
     -> dict[str, dict[str, float]]:
     """
     Compute the correlation coefficient of a list of fitnesses with gap of size k.
@@ -195,6 +208,7 @@ def distance_fitness_correlation(all_fitnesses: dict[str, list[float]], distance
         molecules (list[str]): A list of molecules
         gap (int): The gap size between two sampled molecules
         sample_size (int): The number of samples to use
+        only_valid (bool): If True, only valid molecules will be kept during the random walk (for log purpose)
 
     Returns:
         float: The correlation coefficient
@@ -202,8 +216,10 @@ def distance_fitness_correlation(all_fitnesses: dict[str, list[float]], distance
         list[float]: The sampled delta fitness
         list[tuple[str, str]]: The sampled molecule pairs
     """
-    path = "./results/correlations/" + str(len(molecules) - 1) + "/" + molecules[0] + "/"\
-           + "_".join([action.__name__ for action in MolecularGraph.action_space]) + "/" + TIMESTAMP
+    only_valid_str: str = "only_valid" if only_valid else "not_all_valid"
+
+    path = "./results/correlations/" + only_valid_str + "/" + str(len(molecules) - 1) + "/" + molecules[0] + "/"\
+           + "_".join([action.__name__ for action in MolecularGraph.action_space]) + "/"
 
     os.makedirs(path + "/samples", exist_ok=True)
 
@@ -257,7 +273,7 @@ def distance_fitness_correlation(all_fitnesses: dict[str, list[float]], distance
 
 def correlations(start_smiles: str, n_steps: int, action_space: list[type[Action]],
                  fitness_functions: list[Function], distance_functions: list[Distance],
-                 distance_size: int=1) -> float:
+                 distance_size: int=1, only_valid: bool=True) -> float:
     """
     Compute the fitnesses correlations and the distances-fitnesses correlations between a starting molecule
     and molecules encountered during a random walk.
@@ -269,6 +285,7 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[type[Action
         fitness_functions (list[Function]): A list of fitness functions
         distance_functions (list[Distance]): A list of distance functions
         distance_size (int): The size of the distance between two molecules
+        only_valid (bool): If True, only valid molecules will be kept during the random walk
 
     Return:
         list[float]: A list of fitnesses correlation
@@ -276,14 +293,16 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[type[Action
     """
     dp.setup_default_parameters()
 
+    only_valid_str: str = "only_valid" if only_valid else "not_all_valid"
+
     molecules, are_valid, all_fitnesses = cast(tuple[list[str], list[bool], dict[str, list[float]]],
-                                      random_walk(start_smiles, n_steps, action_space, fitness_functions))
+                                      random_walk(start_smiles, n_steps, action_space, fitness_functions, only_valid))
 
     print("\n---Correlation coefficient(s)---\n")
 
-    with open("./results/correlations/" + str(n_steps) + "/" + start_smiles + "/"
+    with open("./results/correlations/" + only_valid_str + "/" + str(n_steps) + "/" + start_smiles + "/"
               + "_".join([action.__name__ for action in action_space]) + "/"
-              + TIMESTAMP + "/fitness_correlations.csv", "a", newline='') as file:
+              + "/fitness_correlations.csv", "a", newline='') as file:
         writer = csv.writer(file)
         writer.writerow(["fitness_function", "correlation_coefficient"])
 
@@ -295,8 +314,8 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[type[Action
 
     print()
 
-    path = "./results/correlations/" + str(n_steps) + "/" + start_smiles + "/"\
-           + "_".join([action.__name__ for action in action_space]) + "/" + TIMESTAMP
+    path = "./results/correlations/" + only_valid_str + "/" + str(n_steps) + "/" + start_smiles + "/"\
+           + "_".join([action.__name__ for action in action_space])
 
     os.makedirs(path + "/distance_fitness_correlations", exist_ok=True)
 
@@ -330,11 +349,12 @@ def main() -> None:
     """Compute the fitness correlation between molecules found during a random walk"""
     args = sys.argv[1:]
 
-    if len(args) < 3:
+    if len(args) < 4:
         raise Exception("Unexpected number of arguments"
                         "Arg 1: SMILES of a molecule"
                         "Arg 2: Number of steps to perform"
-                        "Arg 3: Actions to perform")
+                        "Arg 3: 0 for all molecules and 1 for only valid ones"
+                        "Arg 4: Actions to perform")
 
     smiles: str = args[0]
     n_steps: int = int(args[1])
@@ -352,12 +372,14 @@ def main() -> None:
         "SubstituteAtomMG"
     ]
 
-    for action in args[2].split(" "):
+    only_valid: bool = bool(args[2])
+
+    for action in args[3].split(" "):
         if action in actions:
             action_space.append(eval("mg." + action))
         else:
             raise ("Actions must be in the following list:\n\n"
-                   "ddAtomMG\n"
+                   "AddAtomMG\n"
                    "AddGroupMG\n"
                    "ChangeBondMG\n"
                    "CutAtomMG\n"
@@ -368,12 +390,14 @@ def main() -> None:
                    "SubstituteAtomMG\n"
                    )
 
-    os.makedirs("./results/correlations/" + str(n_steps) + "/" + smiles + "/" + args[2].replace(" ", "_")
-                + "/" + TIMESTAMP, exist_ok=True)
+    only_valid_str: str = "only_valid" if only_valid else "not_all_valid"
+
+    os.makedirs("./results/correlations/" + only_valid_str + "/" + str(n_steps) + "/" + smiles + "/"
+                + args[3].replace(" ", "_"), exist_ok=True)
 
     correlations(smiles, n_steps, action_space,
                  [QED, SAScore, LogP, PLogP, Silly_Walks],
-                 [Tanimoto, Levenshtein], 3)
+                 [Tanimoto, Levenshtein], 3, only_valid)
 
     print()
     print()
