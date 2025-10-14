@@ -139,12 +139,18 @@ def random_walk(start_smiles: str, n_steps: int, action_space: list[type[Action]
 
         print()
 
+        init_smiles: str = start_smiles
+
         # At each step a random candidate of the molecule neighbor is chosen
         # Its validity and all its fitnesses are computed and saved
         for step in range(n_steps):
             print("----------Step " + str(step + 1) + "----------")
 
             rand_neighbor = get_random_neighbor(start_smiles, only_valid)
+
+            if rand_neighbor == "":
+                rand_neighbor = init_smiles
+
             rand_neighbor_mol = Molecule(rand_neighbor)
             print("Molecule:", rand_neighbor)
 
