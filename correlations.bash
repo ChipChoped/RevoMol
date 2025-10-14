@@ -14,8 +14,10 @@ action_spaces=(
     "AddAtomMG"
     "RemoveAtomMG"
     "ChangeBondMG"
+    "MoveGroupMG"
     "AddAtomMG RemoveAtomMG"
     "AddAtomMG RemoveAtomMG ChangeBondMG"
+    "AddAtomMG RemoveAtomMG ChangeBondMG MoveGroupMG"
 )
 
 for molecule in "${molecules[@]}"
