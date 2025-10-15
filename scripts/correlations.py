@@ -331,7 +331,8 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[type[Action
             writer.writerow(["distance_function", "fitness_function", "correlation_coefficient"])
 
             distance_fitness_correlation_coefficient: dict[str, dict[str, float]]\
-                = distance_fitness_correlation(all_fitnesses, distance_functions, molecules, gap, n_steps // 10)
+                = distance_fitness_correlation(all_fitnesses, distance_functions, molecules,
+                                               gap, n_steps // 10, only_valid)
 
             print("Gap size:", gap)
             print("-------------------------\n")
@@ -378,7 +379,7 @@ def main() -> None:
         "SubstituteAtomMG"
     ]
 
-    only_valid: bool = bool(args[2])
+    only_valid: bool = bool(int(args[2]))
 
     for action in args[3].split(" "):
         if action in actions:
@@ -398,8 +399,14 @@ def main() -> None:
 
     only_valid_str: str = "only_valid" if only_valid else "not_all_valid"
 
-    os.makedirs("./results/correlations/" + only_valid_str + "/" + str(n_steps) + "/" + smiles + "/"
-                + args[3].replace(" ", "_"), exist_ok=True)
+    path = "./results/correlations/" + only_valid_str + "/" + str(n_steps) + "/" + smiles + "/" \
+           + args[3].replace(" ", "_")
+
+    print()
+    print(path)
+    print()
+
+    os.makedirs(path, exist_ok=True)
 
     correlations(smiles, n_steps, action_space,
                  [QED, SAScore, LogP, PLogP, Silly_Walks],
