@@ -76,6 +76,11 @@ class RemoveAtomMG(ActionMolGraph):
         for atom_idx in nx.articulation_points(nx.Graph(mol_graph.adjacency_matrix)):
             articulation_points[atom_idx] = True
 
+        in_a_cycle = [False] * mol_graph.nb_atoms
+        for cycle in nx.cycle_basis(nx.Graph(mol_graph.adjacency_matrix)):
+            for atom_idx in cycle:
+                in_a_cycle[atom_idx] = True
+
         charged_or_radical: list[bool] = [
             mol_graph.atom_charged_or_radical(atom)
             for atom in range(mol_graph.nb_atoms)
@@ -88,6 +93,7 @@ class RemoveAtomMG(ActionMolGraph):
             RemoveAtomMG(molecule, atom)
             for atom in range(mol_graph.nb_atoms)
             if not articulation_points[atom]
+            and not in_a_cycle[atom]
             and not charged_or_radical[atom]
             and not any(
                 charged_or_radical[neighbor]
