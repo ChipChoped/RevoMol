@@ -88,8 +88,23 @@ class ChangeBondMG(ActionMolGraph):
                 min(implicit_valences[atom1], implicit_valences[atom2]) + current_bond
             )
 
+            # determine possible new bonds based on current bond
+            new_possible_bonds: list[int]
+            if current_bond == 0:
+                # can only increase bond
+                new_possible_bonds = [1]
+            elif current_bond == 1:
+                # can increase or decrease bond
+                new_possible_bonds = [0, 2]
+            elif current_bond == 2:
+                # can increase or decrease bond
+                new_possible_bonds = [1, 3]
+            elif current_bond == 3:
+                # can only decrease bond
+                new_possible_bonds = [2]
+
             # for each bond type
-            for new_bond in (0, 1, 2, 3):
+            for new_bond in new_possible_bonds:
                 if current_bond == new_bond:
                     continue
 
