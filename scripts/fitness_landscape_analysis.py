@@ -7,12 +7,11 @@ from typing import cast
 
 import numpy as np
 
-from scripts.search_space_walks import random_walk
+from scripts.random_walk import random_walk
 
 # Add the parent directory to the path to import the module evomol
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from evomol.action.molecular_graph.action_molecular_graph import ActionMolGraph
 from evomol.distance.distance import Distance
 from evomol.distance.levenshtein import Levenshtein
 from evomol.distance.tanimoto import Tanimoto
@@ -20,16 +19,13 @@ from evomol.distance.tanimoto import Tanimoto
 # pylint: disable=wrong-import-position, import-error
 
 from evomol import default_parameters as dp
-from evomol import evaluation as evaluator
-from evomol.representation import MolecularGraph, Molecule
-from evomol.search import enumeration as en
+from evomol.representation import MolecularGraph
 from evomol.evaluation import Function
 from evomol.evaluation.qed import QED
-from evomol.evaluation.sa_score import SAScore, NormalizedSAScore
-from evomol.evaluation.logp import LogP, ZincNormalizedLogP
+from evomol.evaluation.sa_score import SAScore
+from evomol.evaluation.logp import LogP
 from evomol.evaluation.plogp import PLogP
 from evomol.evaluation.silly_walks import Silly_Walks
-from evomol.evaluation.cycle_score import NormalizedCycleScore, CycleScore
 from evomol.action import molecular_graph as mg, Action
 
 
@@ -53,17 +49,16 @@ def fitness_auto_correlation(fitnesses: list[float]) -> list[float]:
     return auto_correlations
 
 
-def distance_fitness_correlation(all_fitnesses: dict[str, list[float]], distance_functions: list[Distance],
-                                 molecules: list[str], gap:int=1, sample_size:int=1, only_valid: bool=True)\
+def delta_fitness_distance_correlation(all_fitnesses: dict[str, list[float]], distance_functions: list[Distance],
+                                       molecules: list[str], sample_size:int=1, only_valid: bool=True)\
     -> dict[str, dict[str, float]]:
     """
-    Compute the correlation coefficient of a list of fitnesses with gap of size k.
+    Compute the correlation coefficient between the delta fitness and the distance for a set of distance functions.
 
     Args:
         all_fitnesses (str, dict[list[float]]): A list of fitness scores
         distance_functions (list[Distance]): A distance function
         molecules (list[str]): A list of molecules
-        gap (int): The gap size between two sampled molecules
         sample_size (int): The number of samples to use
         only_valid (bool): If True, only valid molecules will be kept during the random walk (for log purpose)
 
@@ -76,12 +71,9 @@ def distance_fitness_correlation(all_fitnesses: dict[str, list[float]], distance
     only_valid_str: str = "only_valid" if only_valid else "not_all_valid"
 
     path = "./results/correlations/" + only_valid_str + "/" + str(len(molecules) - 1) + "/" + molecules[0] + "/"\
-           + "_".join([action.__name__ for action in MolecularGraph.action_space]) + "/"
+           + "_".join([action.__name__ for action in MolecularGraph.action_space]) + "/samples.csv"
 
-    os.makedirs(path + "/samples", exist_ok=True)
-
-    with (open(path + "/samples/gap_" + str(gap)
-                + ".csv", "a", newline='') as file):
+    with (open(path, "a", newline='') as file):
         writer = csv.writer(file)
 
         csv_row: list[str] = ["smiles_1", "smiles_2"]
@@ -90,17 +82,19 @@ def distance_fitness_correlation(all_fitnesses: dict[str, list[float]], distance
 
         writer.writerow(csv_row)
 
-        sampled_steps: list[int] = random.sample(range(len(molecules) - gap), sample_size)
+        sampled_steps: list[int] = random.sample(range(len(molecules)), sample_size * 2)
+        steps_1 = sampled_steps[0:sample_size]
+        steps_2 = sampled_steps[sample_size:sample_size * 2]
 
-        for step in sampled_steps:
+        for step_1, step_2 in zip(steps_1, steps_2):
             delta_fitnesses: list[str] = []
             distances: list[str] = []
 
-            mol_1 = molecules[step]
-            mol_2 = molecules[step + gap]
+            mol_1 = molecules[step_1]
+            mol_2 = molecules[step_2]
 
             for fitness_function_name, fitnesses in zip(all_fitnesses.keys(), all_fitnesses.values()):
-                delta_fitnesses.append(str(fitnesses[step + gap] - fitnesses[step]))
+                delta_fitnesses.append(str(fitnesses[step_2] - fitnesses[step_1]))
 
             for distance_function in distance_functions:
                 distances.append(str(distance_function.distance(mol_1, mol_2)))
@@ -119,10 +113,10 @@ def distance_fitness_correlation(all_fitnesses: dict[str, list[float]], distance
             for distance_function in distance_functions:
                 distance_function_name = distance_function.name
                 distance_fitness_correlations[fitness_function_name][distance_function_name] = float(np.corrcoef(
-                    [fitnesses[step + gap] - fitnesses[step]
-                     for step in range(len(molecules) - gap)],
-                    [distance_function.distance(molecules[step], molecules[step + gap])
-                     for step in range(len(molecules) - gap)]
+                    [np.abs(fitnesses[step_2] - fitnesses[step_1])
+                     for step_1, step_2 in zip(steps_1, steps_2)],
+                    [distance_function.distance(molecules[step_1], molecules[step_2])
+                     for step_1, step_2 in zip(steps_1, steps_2)],
                 )[0, 1])
 
         return distance_fitness_correlations
@@ -130,7 +124,7 @@ def distance_fitness_correlation(all_fitnesses: dict[str, list[float]], distance
 
 def correlations(start_smiles: str, n_steps: int, action_space: list[type[Action]],
                  fitness_functions: list[Function], distance_functions: list[Distance],
-                 distance_size: int=1, only_valid: bool=True) -> float:
+                 only_valid: bool=True) -> float:
     """
     Compute the fitnesses correlations and the distances-fitnesses correlations between a starting molecule
     and molecules encountered during a random walk.
@@ -183,33 +177,27 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[type[Action
     print()
 
     path = "./results/correlations/" + only_valid_str + "/" + str(n_steps) + "/" + start_smiles + "/"\
-           + "_".join([action.__name__ for action in action_space])
+           + "_".join([action.__name__ for action in action_space]) + "/distance_fitness_correlations.csv"
 
-    os.makedirs(path + "/distance_fitness_correlations", exist_ok=True)
+    with (open(path, "a", newline='') as file):
+        writer = csv.writer(file)
+        writer.writerow(["fitness_function", "distance_function", "correlation_coefficient"])
 
-    for gap in range(1, distance_size + 1):
-        with (open(path + "/distance_fitness_correlations/gap_" + str(gap) + ".csv", "a", newline='') as file):
-            writer = csv.writer(file)
-            writer.writerow(["distance_function", "fitness_function", "correlation_coefficient"])
+        delta_fitness_distance_correlation_coefficient: dict[str, dict[str, float]]\
+            = delta_fitness_distance_correlation(all_fitnesses, distance_functions, molecules,
+                                                 n_steps // 10, only_valid)
 
-            distance_fitness_correlation_coefficient: dict[str, dict[str, float]]\
-                = distance_fitness_correlation(all_fitnesses, distance_functions, molecules,
-                                               gap, n_steps // 10, only_valid)
+        for fitness_function_name in delta_fitness_distance_correlation_coefficient.keys():
+            for distance_function_name in delta_fitness_distance_correlation_coefficient[fitness_function_name].keys():
+                print(fitness_function_name + "-" + distance_function_name + ":",
+                      delta_fitness_distance_correlation_coefficient[fitness_function_name][distance_function_name])
 
-            print("Gap size:", gap)
-            print("-------------------------\n")
+                writer.writerow([fitness_function_name, distance_function_name,
+                                 delta_fitness_distance_correlation_coefficient
+                                 [fitness_function_name][distance_function_name]])
 
-            for fitness_function_name in distance_fitness_correlation_coefficient.keys():
-                for distance_function_name in distance_fitness_correlation_coefficient[fitness_function_name].keys():
-                    print(distance_function_name + "-" + fitness_function_name + ":",
-                          distance_fitness_correlation_coefficient[fitness_function_name][distance_function_name])
-
-                    writer.writerow([distance_function_name, fitness_function_name,
-                                     distance_fitness_correlation_coefficient
-                                     [fitness_function_name][distance_function_name]])
-
-                print()
             print()
+        print()
 
     return 0
 
@@ -272,7 +260,7 @@ def main() -> None:
 
     correlations(smiles, n_steps, action_space,
                  [QED, SAScore, LogP, PLogP, Silly_Walks],
-                 [Tanimoto, Levenshtein], 3, only_valid)
+                 [Tanimoto, Levenshtein], only_valid)
 
     print()
     print()
