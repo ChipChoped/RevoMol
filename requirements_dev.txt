@@ -10,6 +10,10 @@ matplotlib>=3.9
 cairosvg>=2.7.1
 joblib>=1.4.2
 python-Levenshtein>=0.27.1
+minizinc>=0.10.0
+xarray>=2025.10.1
+tqdm>=4.67.1
+scipy>=1.16.2
 tox
 coverage
 Sphinx
