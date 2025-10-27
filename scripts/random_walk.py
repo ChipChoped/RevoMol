@@ -1,13 +1,12 @@
 import csv
 import random
 
-from distlib.markers import evaluator
-
 from evomol.action import Action
 from evomol.evaluation import Function, ZincNormalizedLogP, NormalizedSAScore, CycleScore, NormalizedCycleScore
 from evomol.representation import Molecule, MolecularGraph
 from evomol.search import enumeration as en
 from evomol import default_parameters as dp
+from evomol import evaluation as evaluator
 
 
 def get_random_neighbor(start_smiles: str, only_valid: bool=True) -> str:
