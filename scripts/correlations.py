@@ -189,17 +189,21 @@ def random_walk(start_smiles: str, n_steps: int, action_space: list[type[Action]
     return path, are_valid, fitnesses
 
 
-def fitness_correlation(fitnesses: list[float], k:int=1) -> float:
+def fitness_auto_correlation(fitnesses: list[float]) -> list[float]:
     """
-    Compute the correlation coefficient of a list of fitnesses with gap of size k.
+    Compute the auto-correlation coefficients of a list of fitnesses with gap of variable size l.
 
     Args:
         fitnesses (list[float]): A list of fitness scores
-        k (int): The size of the gap between each fitness
     Return:
         list[float]: The correlation coefficient
     """
-    return float(np.corrcoef(fitnesses[:-1][::k], fitnesses[1:][::k])[0, 1])
+    auto_correlations: list[float] = []
+
+    for l in range(1, ((len(fitnesses) - 1) // 10 + 1)):
+        auto_correlations.append(float(np.corrcoef(fitnesses[:-1][::l], fitnesses[1:][::l])[0, 1]))
+
+    return auto_correlations
 
 
 def distance_fitness_correlation(all_fitnesses: dict[str, list[float]], distance_functions: list[Distance],
@@ -308,15 +312,26 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[type[Action
 
     with open("./results/correlations/" + only_valid_str + "/" + str(n_steps) + "/" + start_smiles + "/"
               + "_".join([action.__name__ for action in action_space]) + "/"
-              + "/fitness_correlations.csv", "a", newline='') as file:
+              + "/fitness_auto_correlations.csv", "a", newline='') as file:
         writer = csv.writer(file)
-        writer.writerow(["fitness_function", "correlation_coefficient"])
+
+        row = ["lag"]
+        row.extend(all_fitnesses.keys())
+
+        writer.writerow(row)
+
+        fitness_auto_correlation_coefficients: dict[str, list[float]] = dict()
 
         for fitness_function_name, fitnesses in zip(all_fitnesses.keys(), all_fitnesses.values()):
-            fitness_correlation_coefficient: float = fitness_correlation(fitnesses)
+            fitness_auto_correlation_coefficients[fitness_function_name] = fitness_auto_correlation(fitnesses)
+            print(fitness_function_name + ":", fitness_auto_correlation_coefficients[fitness_function_name][0])
 
-            print(fitness_function_name + ":", fitness_correlation_coefficient)
-            writer.writerow([fitness_function_name, fitness_correlation_coefficient])
+        for l in range(n_steps // 10):
+            row = [str(l + 1)]
+            row.extend(iter(map(str, [fitness_auto_correlation_coefficients[fitness_function_name][l]
+                        for fitness_function_name in all_fitnesses.keys()])))
+
+            writer.writerow(row)
 
     print()
 
