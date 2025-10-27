@@ -7,6 +7,7 @@ from typing import cast
 
 import numpy as np
 
+from evomol.distance.ged import GED
 from scripts.random_walk import random_walk
 
 # Add the parent directory to the path to import the module evomol
@@ -260,7 +261,7 @@ def main() -> None:
 
     correlations(smiles, n_steps, action_space,
                  [QED, SAScore, LogP, PLogP, Silly_Walks],
-                 [Tanimoto, Levenshtein], only_valid)
+                 [Tanimoto, Levenshtein, GED], only_valid)
 
     print()
     print()
