@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import networkx as nx
 from rdkit import Chem
+from rdkit.Chem.rdchem import IMPLICIT
 from typing_extensions import override
 
 from evomol.representation.molecule import MoleculeRepresentation
@@ -276,7 +277,7 @@ class MolecularGraph(MoleculeRepresentation):
         """
         atom = self.mol.GetAtomWithIdx(atom_idx)
         atom.UpdatePropertyCache()
-        valence: int = atom.GetImplicitValence()
+        valence: int = atom.GetValence(IMPLICIT)
         if atom.GetSymbol() == "S":
             total_valence: int = atom.GetTotalValence()
             if total_valence in (2, 4):
