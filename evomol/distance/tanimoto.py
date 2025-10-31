@@ -1,3 +1,4 @@
+from rdkit import RDLogger
 from rdkit.Chem import rdmolfiles, AllChem
 from rdkit.DataStructs import TanimotoSimilarity
 
@@ -15,6 +16,8 @@ def tanimoto(molecule_1: str, molecule_2: str) -> float:
     Return:
         float: The Tanimoto distance
     """
+
+    RDLogger.DisableLog('rdApp.warning')
 
     molecule_1 = rdmolfiles.MolFromSmiles(molecule_1)
     molecule_2 = rdmolfiles.MolFromSmiles(molecule_2)
