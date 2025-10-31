@@ -1,5 +1,6 @@
 import csv
 import random
+from typing import cast
 
 from evomol.action import Action
 from evomol.evaluation import Function, ZincNormalizedLogP, NormalizedSAScore, CycleScore, NormalizedCycleScore
@@ -9,7 +10,7 @@ from evomol import default_parameters as dp
 from evomol import evaluation as evaluator
 
 
-def get_random_neighbor(start_smiles: str, only_valid: bool=True) -> str:
+def get_random_neighbor(start_smiles: str, only_valid: bool = True) -> str:
     """
     Get a random neighbor for a molecule without looking if it is realistic.
 
@@ -41,17 +42,67 @@ def get_random_neighbor(start_smiles: str, only_valid: bool=True) -> str:
         return random.choice(list(smiles_set))
 
 
-def random_walk(start_smiles: str, n_steps: int, action_space: list[type[Action]],
-                fitness_functions: list[Function], only_valid: bool=True)\
+def get_best_neighbor(start_smiles: str, fitness_function: Function, only_valid: bool = True) -> str:
+    """
+    Get the neighbor with the highest fitness equal or higher than the starting molecule.
+
+    Arg:
+        start_smiles (str): The smiles of the starting molecule
+        fitness_function (Function): The fitness function to evaluate neighbors
+        only_valid (bool): If true, only valid smiles will be considered.
+
+    Return:
+        str: The best neighbor of the molecule
+    """
+    # Convert the starting SMILES to its canonical form
+    can_smi_start = (
+        Molecule(start_smiles).get_representation(MolecularGraph).canonical_smiles
+    )
+
+    smiles_set: set[str] = en.find_neighbors(Molecule(can_smi_start), 1)
+
+    if only_valid:
+        evaluations = dp.setup_filters("chembl_zinc")
+
+        valid_smiles: set[str] = {smiles for smiles in smiles_set
+                                  if evaluator.is_valid_molecule(Molecule(smiles), evaluations)}
+
+        smiles_set = valid_smiles
+
+    if len(smiles_set) == 0:
+        return ""
+    else:
+        start_mol = Molecule(start_smiles)
+        start_fitness = fitness_function.evaluate(start_mol)
+
+        best_smiles: str = ""
+        best_fitness: float = start_fitness
+
+        for smiles in smiles_set:
+            neighbor_mol = Molecule(smiles)
+            neighbor_fitness = fitness_function.evaluate(neighbor_mol)
+
+            if neighbor_fitness >= best_fitness:
+                best_fitness = neighbor_fitness
+                best_smiles = smiles
+
+        return best_smiles
+
+
+def walk(start_smiles: str, n_steps: int, action_space: list[Action],
+         fitness_functions: list[Function], strategy: str= "random", evaluation_function: Function = None,
+         only_valid: bool = True)\
     -> tuple[list[str], list[bool], dict[str, list[float]]]:
     """
-    Perform a random walk with a starting molecule and a set of allowed action.
+    Perform an adaptive walk with a starting molecule and a set of allowed action.
 
     Args:
         start_smiles (str): The smiles of the starting molecule
         n_steps (int): The number of steps to perform
-        action_space(ActionMolGraph): Actions allowed to perform
+        action_space(list[Action]): Actions allowed to perform
         fitness_functions (list[Function]): A list of fitness functions
+        strategy (str): The type of walk to perform ("random" or "adaptive")
+        evaluation_function (Function): The fitness function to evaluate neighbors in adaptive walks
         only_valid (bool): If True, only valid molecules will be kept during the random walk
 
     Returns:
@@ -61,7 +112,7 @@ def random_walk(start_smiles: str, n_steps: int, action_space: list[type[Action]
     """
     # Initialize and set the action space
     dp.setup_default_action_space()
-    MolecularGraph.action_space = action_space
+    MolecularGraph.action_space = cast(list[type[Action]], cast(object, action_space))
 
     evaluations = dp.setup_filters("chembl_zinc")
     start_mol = Molecule(start_smiles)
@@ -77,9 +128,14 @@ def random_walk(start_smiles: str, n_steps: int, action_space: list[type[Action]
 
     fitnesses: dict[str, list[float]] = dict()  # All fitnesses of molecules encountered
 
-    with open("./results/correlations/" + only_valid_str + "/" + str(n_steps) + "/" + start_smiles + "/"
-              + "_".join([action.__name__ for action in MolecularGraph.action_space])
-              + "/random_walk.csv", "a", newline='') as file:
+    evaluation_function_str: str = ""
+
+    if strategy == "adaptive":
+        evaluation_function_str: str = evaluation_function.name + "/"
+
+    with open("./results/" + strategy + "_walk/" + only_valid_str + "/" + str(n_steps) + "/" + start_smiles + "/"
+              + "_".join([action.__name__ for action in MolecularGraph.action_space]) + "/" + evaluation_function_str
+              + "random_walk.csv", "a", newline='') as file:
         writer = csv.writer(file)
 
         csv_row = ["smiles", "is_valid"]
@@ -121,38 +177,50 @@ def random_walk(start_smiles: str, n_steps: int, action_space: list[type[Action]
         for step in range(n_steps):
             print("----------Step " + str(step + 1) + "----------")
 
-            rand_neighbor = get_random_neighbor(start_smiles, only_valid)
+            # Get a random neighbor
+            if strategy == "random":
+                neighbor = get_random_neighbor(start_smiles, only_valid)
+            # Get the best neighbor according to the evaluation function
+            # and stops the walk if no better neighbor is found
+            elif strategy == "adaptive":
+                neighbor = get_best_neighbor(start_smiles, evaluation_function, only_valid)
 
-            if rand_neighbor == "":
-                rand_neighbor = init_smiles
+                if neighbor == "":
+                    print("No better neighbor found, stopping the walk.")
+                    break
+            else:
+                raise ValueError("Strategy must be 'random' or 'adaptive'!")
 
-            rand_neighbor_mol = Molecule(rand_neighbor)
-            print("Molecule:", rand_neighbor)
+            if neighbor == "":
+                neighbor = init_smiles
 
-            path.append(rand_neighbor)
-            are_valid.append(evaluator.is_valid_molecule(rand_neighbor_mol, evaluations))
+            neighbor_mol = Molecule(neighbor)
+            print("Molecule:", neighbor)
+
+            path.append(neighbor)
+            are_valid.append(evaluator.is_valid_molecule(neighbor_mol, evaluations))
             print("Is valid:", (are_valid[-1]))
 
             for fitness_function, i in zip(fitness_functions, range(len(fitness_functions))):
                 function_name = fitness_function.name
 
                 if fitness_function.name == "PLogP":
-                    rand_neighbor_mol.set_value("zinc_normalized_logP",
-                                                ZincNormalizedLogP.evaluate(rand_neighbor_mol))
-                    rand_neighbor_mol.set_value("zinc_normalized_sa_score",
-                                                NormalizedSAScore.evaluate(rand_neighbor_mol))
-                    rand_neighbor_mol.set_value("CycleScore",
-                                                CycleScore.evaluate(rand_neighbor_mol))
-                    rand_neighbor_mol.set_value("zinc_normalized_cycle_score",
-                                                NormalizedCycleScore.evaluate(rand_neighbor_mol))
+                    neighbor_mol.set_value("zinc_normalized_logP",
+                                                ZincNormalizedLogP.evaluate(neighbor_mol))
+                    neighbor_mol.set_value("zinc_normalized_sa_score",
+                                                NormalizedSAScore.evaluate(neighbor_mol))
+                    neighbor_mol.set_value("CycleScore",
+                                                CycleScore.evaluate(neighbor_mol))
+                    neighbor_mol.set_value("zinc_normalized_cycle_score",
+                                                NormalizedCycleScore.evaluate(neighbor_mol))
 
-                fitness = fitness_function.evaluate(rand_neighbor_mol)
+                fitness = fitness_function.evaluate(neighbor_mol)
                 fitnesses[function_name].append(fitness)
-                rand_neighbor_mol.set_value(function_name, fitness)
+                neighbor_mol.set_value(function_name, fitness)
 
                 print(function_name + ":", fitnesses[fitness_function.name][-1])
 
-            start_smiles = rand_neighbor
+            start_smiles = neighbor
 
             csv_row = [start_smiles, are_valid[-1]]
             csv_row.extend(iter([str(fitness[-1]) for fitness in fitnesses.values()]))
