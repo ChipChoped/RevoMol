@@ -1,14 +1,16 @@
+import argparse
 import csv
 import os
 import random
 import sys
+from argparse import ArgumentParser
 from datetime import datetime
 from typing import cast
 
 import numpy as np
 
-from evomol.distance.ged import GED
-from scripts.random_walk import random_walk
+from evomol.distance.ged import GED, NormalizedGED
+from scripts.walk import walk
 
 # Add the parent directory to the path to import the module evomol
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -20,7 +22,6 @@ from evomol.distance.tanimoto import Tanimoto
 # pylint: disable=wrong-import-position, import-error
 
 from evomol import default_parameters as dp
-from evomol.representation import MolecularGraph
 from evomol.evaluation import Function
 from evomol.evaluation.qed import QED
 from evomol.evaluation.sa_score import SAScore
@@ -30,28 +31,26 @@ from evomol.evaluation.silly_walks import Silly_Walks
 from evomol.action import molecular_graph as mg, Action
 
 
-TIMESTAMP = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-
-
-def fitness_auto_correlation(fitnesses: list[float]) -> list[float]:
+def fitness_auto_correlation(fitnesses: list[float], max_lag: int) -> list[float]:
     """
     Compute the auto-correlation coefficients of a list of fitnesses with gap of variable size l.
 
     Args:
         fitnesses (list[float]): A list of fitness scores
+        max_lag (int): The maximum lag to compute
     Return:
         list[float]: The correlation coefficient
     """
     auto_correlations: list[float] = []
 
-    for l in range(1, ((len(fitnesses) - 1) // 10 + 1)):
-        auto_correlations.append(float(np.corrcoef(fitnesses[:-1][::l], fitnesses[1:][::l])[0, 1]))
+    for l in range(1, max_lag):
+        auto_correlations.append(float(np.corrcoef(fitnesses[:-l], fitnesses[l:])[0, 1]))
 
     return auto_correlations
 
 
 def delta_fitness_distance_correlation(all_fitnesses: dict[str, list[float]], distance_functions: list[Distance],
-                                       molecules: list[str], sample_size:int=1, only_valid: bool=True)\
+                                       molecules: list[str], path: str, sample_size: int = 1) \
     -> dict[str, dict[str, float]]:
     """
     Compute the correlation coefficient between the delta fitness and the distance for a set of distance functions.
@@ -60,8 +59,8 @@ def delta_fitness_distance_correlation(all_fitnesses: dict[str, list[float]], di
         all_fitnesses (str, dict[list[float]]): A list of fitness scores
         distance_functions (list[Distance]): A distance function
         molecules (list[str]): A list of molecules
+        path (str): The path of the directory
         sample_size (int): The number of samples to use
-        only_valid (bool): If True, only valid molecules will be kept during the random walk (for log purpose)
 
     Returns:
         float: The correlation coefficient
@@ -69,12 +68,7 @@ def delta_fitness_distance_correlation(all_fitnesses: dict[str, list[float]], di
         list[float]: The sampled delta fitness
         list[tuple[str, str]]: The sampled molecule pairs
     """
-    only_valid_str: str = "only_valid" if only_valid else "not_all_valid"
-
-    path = "./results/correlations/" + only_valid_str + "/" + str(len(molecules) - 1) + "/" + molecules[0] + "/"\
-           + "_".join([action.__name__ for action in MolecularGraph.action_space]) + "/samples.csv"
-
-    with (open(path, "a", newline='') as file):
+    with open(path + "/samples.csv", "a", newline='') as file:
         writer = csv.writer(file)
 
         csv_row: list[str] = ["smiles_1", "smiles_2"]
@@ -83,9 +77,8 @@ def delta_fitness_distance_correlation(all_fitnesses: dict[str, list[float]], di
 
         writer.writerow(csv_row)
 
-        sampled_steps: list[int] = random.sample(range(len(molecules)), sample_size * 2)
-        steps_1 = sampled_steps[0:sample_size]
-        steps_2 = sampled_steps[sample_size:sample_size * 2]
+        steps_1: list[int] = random.sample(range(len(molecules)), sample_size)
+        steps_2: list[int] = random.sample(range(len(molecules)), sample_size)
 
         for step_1, step_2 in zip(steps_1, steps_2):
             delta_fitnesses: list[str] = []
@@ -123,9 +116,10 @@ def delta_fitness_distance_correlation(all_fitnesses: dict[str, list[float]], di
         return distance_fitness_correlations
 
 
-def correlations(start_smiles: str, n_steps: int, action_space: list[type[Action]],
+def correlations(start_smiles: str, n_steps: int, action_space: list[Action],
                  fitness_functions: list[Function], distance_functions: list[Distance],
-                 only_valid: bool=True) -> float:
+                 strategy: str = "random", evaluation_function: Function = None,
+                 only_valid: bool = True) -> float:
     """
     Compute the fitnesses correlations and the distances-fitnesses correlations between a starting molecule
     and molecules encountered during a random walk.
@@ -133,10 +127,11 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[type[Action
     Args:
         start_smiles (str): The smiles of the starting molecule
         n_steps (int): The number of steps to perform
-        action_space (list[type[Action]]): Actions allowed to perform
+        action_space (list[Action]): Actions allowed to perform
         fitness_functions (list[Function]): A list of fitness functions
         distance_functions (list[Distance]): A list of distance functions
-        distance_size (int): The size of the distance between two molecules
+        strategy (str): The type of walk to perform ("random" or "adaptive")
+        evaluation_function (Function): The fitness function to evaluate neighbors in adaptive walks
         only_valid (bool): If True, only valid molecules will be kept during the random walk
 
     Return:
@@ -147,14 +142,23 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[type[Action
 
     only_valid_str: str = "only_valid" if only_valid else "not_all_valid"
 
+    if only_valid and Silly_Walks in fitness_functions:
+        fitness_functions.remove(Silly_Walks)
+
     molecules, are_valid, all_fitnesses = cast(tuple[list[str], list[bool], dict[str, list[float]]],
-                                      random_walk(start_smiles, n_steps, action_space, fitness_functions, only_valid))
+                                               walk(start_smiles, n_steps, action_space, fitness_functions,
+                                                    strategy, evaluation_function, only_valid))
 
     print("\n---Correlation coefficient(s)---\n")
 
-    with open("./results/correlations/" + only_valid_str + "/" + str(n_steps) + "/" + start_smiles + "/"
-              + "_".join([action.__name__ for action in action_space]) + "/"
-              + "/fitness_auto_correlations.csv", "a", newline='') as file:
+    evaluation_function_str: str = ""
+
+    if strategy == "adaptive":
+        evaluation_function_str = evaluation_function.name + "/"
+
+    with open("./results/" + strategy + "_walk/" + only_valid_str + "/" + str(n_steps) + "/" + start_smiles + "/"
+              + "_".join([action.__name__ for action in action_space]) + "/" + evaluation_function_str
+              + "fitness_auto_correlations.csv", "a", newline='') as file:
         writer = csv.writer(file)
 
         row = ["lag"]
@@ -162,31 +166,33 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[type[Action
 
         writer.writerow(row)
 
+        max_lag = min(100, len(molecules) - 1)
         fitness_auto_correlation_coefficients: dict[str, list[float]] = dict()
 
         for fitness_function_name, fitnesses in zip(all_fitnesses.keys(), all_fitnesses.values()):
-            fitness_auto_correlation_coefficients[fitness_function_name] = fitness_auto_correlation(fitnesses)
+            fitness_auto_correlation_coefficients[fitness_function_name] = fitness_auto_correlation(fitnesses, max_lag)
             print(fitness_function_name + ":", fitness_auto_correlation_coefficients[fitness_function_name][0])
 
-        for l in range(n_steps // 10):
+        for l in range(max_lag - 1):
             row = [str(l + 1)]
             row.extend(iter(map(str, [fitness_auto_correlation_coefficients[fitness_function_name][l]
-                        for fitness_function_name in all_fitnesses.keys()])))
+                                      for fitness_function_name in all_fitnesses.keys()])))
 
             writer.writerow(row)
 
     print()
 
-    path = "./results/correlations/" + only_valid_str + "/" + str(n_steps) + "/" + start_smiles + "/"\
-           + "_".join([action.__name__ for action in action_space]) + "/distance_fitness_correlations.csv"
+    path = "./results/" + strategy + "_walk/" + only_valid_str + "/" + str(n_steps) + "/" + start_smiles + "/" \
+           + "_".join([action.__name__ for action in action_space]) + "/" + evaluation_function_str
 
-    with (open(path, "a", newline='') as file):
+    with open(path + "distance_fitness_correlations.csv", "a", newline='') as file:
         writer = csv.writer(file)
         writer.writerow(["fitness_function", "distance_function", "correlation_coefficient"])
 
-        delta_fitness_distance_correlation_coefficient: dict[str, dict[str, float]]\
-            = delta_fitness_distance_correlation(all_fitnesses, distance_functions, molecules,
-                                                 n_steps // 10, only_valid)
+        sample_size = min(100, len(molecules))
+
+        delta_fitness_distance_correlation_coefficient: dict[str, dict[str, float]] \
+            = delta_fitness_distance_correlation(all_fitnesses, distance_functions, molecules, path, sample_size)
 
         for fitness_function_name in delta_fitness_distance_correlation_coefficient.keys():
             for distance_function_name in delta_fitness_distance_correlation_coefficient[fitness_function_name].keys():
@@ -205,53 +211,48 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[type[Action
 
 def main() -> None:
     """Compute the fitness correlation between molecules found during a random walk"""
-    args = sys.argv[1:]
+    parser: ArgumentParser = argparse.ArgumentParser()
 
-    if len(args) < 4:
-        raise Exception("Unexpected number of arguments"
-                        "Arg 1: SMILES of a molecule"
-                        "Arg 2: Number of steps to perform"
-                        "Arg 3: 0 for all molecules and 1 for only valid ones"
-                        "Arg 4: Actions to perform")
+    parser.add_argument("strategy", type=str, choices=("random", "adaptive"),
+                        help="The type of walk to perform (random or adaptive)")
+    parser.add_argument("smiles", type=str, help="SMILES of a molecule")
+    parser.add_argument("n_steps", type=int, help="Number of steps to perform")
+    parser.add_argument("-a", required=True, type=str, help="Actions to perform (space separated)",
+                        choices=("AddAtomMG", "AddGroupMG", "ChangeBondMG", "CutAtomMG", "InsertCarbonMG",
+                                 "MoveGroupMG", "RemoveAtomMG", "RemoveGroupMG", "SubstituteAtomMG"),
+                        dest="actions", nargs="+")
+    parser.add_argument("-e", type=str, choices=("QED", "SAScore", "LogP", "PLogP", "Silly_Walks"),
+                        help="The evaluation function to use in adaptive walks", dest="evaluation_function",
+                        default=None)
+    parser.add_argument("--only-valid", action="store_true",
+                        help="If set, only valid molecules will be kept during the walk", dest="only_valid")
 
-    smiles: str = args[0]
-    n_steps: int = int(args[1])
-    action_space: list[type[Action]] = []
+    arguments: argparse.Namespace = parser.parse_args()
 
-    actions: list[str] = [
-        "AddAtomMG",
-        "AddGroupMG",
-        "ChangeBondMG",
-        "CutAtomMG",
-        "InsertCarbonMG",
-        "MoveGroupMG",
-        "RemoveAtomMG",
-        "RemoveGroupMG",
-        "SubstituteAtomMG"
-    ]
+    action_space: list[Action] = [eval("mg." + action) for action in arguments.actions]
 
-    only_valid: bool = bool(int(args[2]))
+    evaluation_function: Function | None = None
 
-    for action in args[3].split(" "):
-        if action in actions:
-            action_space.append(eval("mg." + action))
-        else:
-            raise ("Actions must be in the following list:\n\n"
-                   "AddAtomMG\n"
-                   "AddGroupMG\n"
-                   "ChangeBondMG\n"
-                   "CutAtomMG\n"
-                   "InsertCarbonMG\n"
-                   "MoveGroupMG\n"
-                   "RemoveAtomMG\n"
-                   "RemoveGroupMG\n"<
-                   "SubstituteAtomMG\n"
-                   )
+    if arguments.evaluation_function is not None:
+        try:
+            evaluation_function = eval(arguments.evaluation_function)
+        except NameError:
+            print("Error: Unknown evaluation function", arguments.evaluation_function)
+            exit(1)
 
-    only_valid_str: str = "only_valid" if only_valid else "not_all_valid"
+    evaluation_function_str: str = ""
 
-    path = "./results/correlations/" + only_valid_str + "/" + str(n_steps) + "/" + smiles + "/" \
-           + args[3].replace(" ", "_")
+    if arguments.strategy == "adaptive" and evaluation_function is None:
+        print("Error: An evaluation function must be provided for adaptive walks")
+        exit(1)
+    elif arguments.strategy == "adaptive" and evaluation_function is not None:
+        evaluation_function_str: str = arguments.evaluation_function + "/"
+
+    only_valid_str: str = "only_valid" if parser.parse_args().only_valid else "not_all_valid"
+
+    path = ("./results/" + arguments.strategy + "_walk/" + only_valid_str + "/" + str(arguments.n_steps) + "/"
+            + arguments.smiles + "/" + str(arguments.actions).replace("', '", "_")
+            .replace("['", "").replace("']", "") + "/" + evaluation_function_str)
 
     print()
     print(path)
@@ -259,12 +260,15 @@ def main() -> None:
 
     os.makedirs(path, exist_ok=True)
 
-    correlations(smiles, n_steps, action_space,
+    correlations(arguments.smiles, arguments.n_steps, action_space,
                  [QED, SAScore, LogP, PLogP, Silly_Walks],
-                 [Tanimoto, Levenshtein, GED], only_valid)
+                 [Tanimoto, Levenshtein, GED, NormalizedGED],
+                 strategy=arguments.strategy, evaluation_function=evaluation_function,
+                 only_valid=arguments.only_valid)
 
     print()
     print()
+
 
 if __name__ == "__main__":
     main()
