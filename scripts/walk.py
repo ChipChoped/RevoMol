@@ -11,7 +11,7 @@ from evomol import default_parameters as dp
 from evomol import evaluation as evaluator
 
 
-def get_random_neighbor(start_smiles: str, only_valid: bool = True) -> str:
+def get_random_neighbor(start_smiles: str, only_valid: bool = True) -> tuple[str, int]:
     """
     Get a random neighbor for a molecule without looking if it is realistic.
 
@@ -21,6 +21,7 @@ def get_random_neighbor(start_smiles: str, only_valid: bool = True) -> str:
 
     Return:
         str: A random neighbor of the molecule
+        int: Size of the neighborhood
     """
     # Convert the starting SMILES to its canonical form
     can_smi_start = (
@@ -38,13 +39,12 @@ def get_random_neighbor(start_smiles: str, only_valid: bool = True) -> str:
         smiles_set = valid_smiles
 
     if len(smiles_set) == 0:
-        return ""
+        return "", 0
     else:
-        return random.choice(list(smiles_set))
+        return random.choice(list(smiles_set)), len(smiles_set)
 
 
-def get_best_neighbor(start_smiles: str, fitness_function: Function, only_valid: bool = True) -> str | tuple[
-    str, float]:
+def get_best_neighbor(start_smiles: str, fitness_function: Function, only_valid: bool = True) -> tuple[str, float, int]:
     """
     Get the neighbor with the highest fitness equal or higher than the starting molecule.
 
@@ -55,6 +55,8 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, only_valid:
 
     Return:
         str: The best neighbor of the molecule
+        float: The fitness of the best neighbor
+        int: Size of the neighborhood
     """
     # Convert the starting SMILES to its canonical form
     can_smi_start = (
@@ -72,7 +74,7 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, only_valid:
         smiles_set = valid_smiles
 
     if len(smiles_set) == 0:
-        return ""
+        return "", 0, 0
     else:
         start_mol = Molecule(start_smiles)
         start_fitness = fitness_function.evaluate(start_mol)
@@ -88,7 +90,7 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, only_valid:
                 best_fitness = neighbor_fitness
                 best_smiles = smiles
 
-        return best_smiles, best_fitness
+        return best_smiles, best_fitness, len(smiles_set)
 
 
 def walk(start_smiles: str, n_steps: int, action_space: list[Action],
@@ -141,11 +143,12 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
 
     with open("./results/" + strategy + "_walk/" + only_valid_str + "/" + str(n_steps) + "/" + start_smiles + "/"
               + "_".join([action.__name__ for action in MolecularGraph.action_space]) + "/" + evaluation_function_str
-              + "random_walk.csv", "a", newline='') as file:
+              + "walk.csv", "a", newline='') as file:
         writer = csv.writer(file)
 
         csv_row = ["smiles", "is_valid"]
         csv_row.extend([function.name for function in fitness_functions])
+        csv_row.append("neighborhood_size")
 
         writer.writerow(csv_row)
 
@@ -172,24 +175,34 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
         csv_row = [start_smiles, are_valid[-1]]
         csv_row.extend(iter([str(fitness[-1]) for fitness in fitnesses.values()]))
 
-        writer.writerow(csv_row)
-
-        print()
-
         init_smiles: str = start_smiles
 
         # At each step a random candidate of the molecule neighbor is chosen
         # Its validity and all its fitnesses are computed and saved
         for step in range(n_steps):
-            print("----------Step " + str(step + 1) + "----------")
 
             # Get a random neighbor
             if strategy == "random":
-                neighbor = get_random_neighbor(start_smiles, only_valid)
+                neighbor, neighborhood_size = get_random_neighbor(start_smiles, only_valid)
+
+                csv_row.append(str(neighborhood_size))
+                writer.writerow(csv_row)
+
+                print("Neighborhood size:", neighborhood_size)
+                print()
+                print("----------Step " + str(step + 1) + "----------")
             # Get the best neighbor according to the evaluation function
             # and stops the walk if no better neighbor is found
             elif strategy == "adaptive":
-                neighbor, neighbor_fitness = get_best_neighbor(start_smiles, evaluation_function, only_valid)
+                neighbor, neighbor_fitness, neighborhood_size = get_best_neighbor(start_smiles, evaluation_function,
+                                                                                  only_valid)
+
+                csv_row.append(str(neighborhood_size))
+                writer.writerow(csv_row)
+
+                print("Neighborhood size:", neighborhood_size)
+                print()
+                print("----------Step " + str(step + 1) + "----------")
 
                 start_fitness: float
                 plateaus: list[tuple[float, list[int]]]
@@ -255,10 +268,6 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
 
             csv_row = [start_smiles, are_valid[-1]]
             csv_row.extend(iter([str(fitness[-1]) for fitness in fitnesses.values()]))
-
-            writer.writerow(csv_row)
-
-            print()
 
     if strategy == "adaptive":
         with open("./results/" + strategy + "_walk/" + only_valid_str + "/" + str(n_steps) + "/"
