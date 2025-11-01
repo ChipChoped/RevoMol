@@ -3,7 +3,8 @@ import random
 from typing import cast
 
 from evomol.action import Action
-from evomol.evaluation import Function, ZincNormalizedLogP, NormalizedSAScore, CycleScore, NormalizedCycleScore
+from evomol.evaluation import Function, ZincNormalizedLogP, NormalizedSAScore, CycleScore, NormalizedCycleScore, \
+    Evaluation
 from evomol.representation import Molecule, MolecularGraph
 from evomol.search import enumeration as en
 from evomol import default_parameters as dp
@@ -42,7 +43,8 @@ def get_random_neighbor(start_smiles: str, only_valid: bool = True) -> str:
         return random.choice(list(smiles_set))
 
 
-def get_best_neighbor(start_smiles: str, fitness_function: Function, only_valid: bool = True) -> str:
+def get_best_neighbor(start_smiles: str, fitness_function: Function, only_valid: bool = True) -> str | tuple[
+    str, float]:
     """
     Get the neighbor with the highest fitness equal or higher than the starting molecule.
 
@@ -86,7 +88,7 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, only_valid:
                 best_fitness = neighbor_fitness
                 best_smiles = smiles
 
-        return best_smiles
+        return best_smiles, best_fitness
 
 
 def walk(start_smiles: str, n_steps: int, action_space: list[Action],
@@ -114,8 +116,8 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
     dp.setup_default_action_space()
     MolecularGraph.action_space = cast(list[type[Action]], cast(object, action_space))
 
-    evaluations = dp.setup_filters("chembl_zinc")
-    start_mol = Molecule(start_smiles)
+    evaluations: list[Evaluation] = dp.setup_filters("chembl_zinc")
+    start_mol: Molecule = Molecule(start_smiles)
 
     print("----------Step 0----------")
     print("Molecule:", start_smiles)
@@ -132,6 +134,10 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
 
     if strategy == "adaptive":
         evaluation_function_str: str = evaluation_function.name + "/"
+        start_fitness: float = evaluation_function.evaluate(start_mol)
+
+        plateau: list[int] = []
+        plateaus: list[tuple[float, list[int]]] = []
 
     with open("./results/" + strategy + "_walk/" + only_valid_str + "/" + str(n_steps) + "/" + start_smiles + "/"
               + "_".join([action.__name__ for action in MolecularGraph.action_space]) + "/" + evaluation_function_str
@@ -183,11 +189,36 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
             # Get the best neighbor according to the evaluation function
             # and stops the walk if no better neighbor is found
             elif strategy == "adaptive":
-                neighbor = get_best_neighbor(start_smiles, evaluation_function, only_valid)
+                neighbor, neighbor_fitness = get_best_neighbor(start_smiles, evaluation_function, only_valid)
+
+                start_fitness: float
+                plateaus: list[tuple[float, list[int]]]
 
                 if neighbor == "":
                     print("No better neighbor found, stopping the walk.")
+
+                    if len(plateau) > 0:
+                        plateaus.append((start_fitness, plateau))
+
+                        with open("./results/" + strategy + "_walk/" + only_valid_str + "/" + str(n_steps) + "/"
+                                  + path[0] + "/" + "_".join([action.__name__ for action in MolecularGraph.action_space]) + "/"
+                                  + evaluation_function_str + "plateaus.csv", "w") as plateau_file:
+                            plateau_writer = csv.writer(plateau_file)
+                            plateau_writer.writerow(["step", "smiles", "start_smiles", "fitness"])
+
+                            for p in plateaus:
+                                for s in p[1]:
+                                    plateau_writer.writerow([s, start_smiles, path[0], p[0]])
+
                     break
+                elif neighbor_fitness == start_fitness:
+                    if len(plateau) == 0:
+                        plateau = [step]
+                    elif plateau[-1] == step - 1:
+                        plateau.append(step)
+                    else:
+                        plateaus.append((start_fitness, plateau))
+                        plateau = [step]
             else:
                 raise ValueError("Strategy must be 'random' or 'adaptive'!")
 
