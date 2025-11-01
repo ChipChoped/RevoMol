@@ -229,4 +229,23 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
 
             print()
 
+    if strategy == "adaptive":
+        with open("./results/" + strategy + "_walk/" + only_valid_str + "/" + str(n_steps) + "/"
+                  + path[0] + "/" + "_".join([action.__name__ for action in MolecularGraph.action_space]) + "/"
+                  + evaluation_function_str + "local_optimum.csv", "w") as file:
+            writer = csv.writer(file)
+
+            if len(path) - 1 != n_steps:
+                row = ["smiles", "start_smiles", "is_valid", "steps_taken", "evaluation_function"]
+                row.extend([function.name for function in fitness_functions])
+
+                writer.writerow(row)
+
+                row = [start_smiles, path[0], are_valid[-1], len(path) - 1, evaluation_function.name]
+                row.extend([str(fitness[-1]) for fitness in fitnesses.values()])
+
+                writer.writerow(row)
+            else:
+                writer.writerow(["No local optimum found in " + str(n_steps) + " steps."])
+
     return path, are_valid, fitnesses
