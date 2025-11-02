@@ -41,14 +41,16 @@ from multiprocessing.managers import ValueProxy
 from threading import Lock
 
 from evomol import evaluation as evaluator
+from evomol.action import Action
 from evomol.representation import Molecule
 
 
-def set_of_neighbors(molecule: Molecule) -> set[Molecule]:
+def set_of_neighbors(molecule: Molecule, info: bool = False) -> set[Molecule] | set[tuple[Molecule, Action]]:
     """List the neighbors of a molecule and compute them.
 
     Args:
         molecule (Molecule): Molecule to explore
+        info (bool): Whether to return the action applied along with the molecule
 
     Returns:
         set[Molecule]: set of molecules found
@@ -57,12 +59,20 @@ def set_of_neighbors(molecule: Molecule) -> set[Molecule]:
     molecule.compute_possible_actions()
     # for each representation, for each action list, for each action, apply it
     # and return the set of new molecules
-    return {
-        action.apply()
-        for representation in molecule.possible_actions.values()
-        for action_list in representation.values()
-        for action in action_list
-    }
+    if info:
+        return {
+            (action.apply(), action)
+            for representation in molecule.possible_actions.values()
+            for action_list in representation.values()
+            for action in action_list
+        }
+    else:
+        return {
+            action.apply()
+            for representation in molecule.possible_actions.values()
+            for action_list in representation.values()
+            for action in action_list
+        }
 
 
 def list_of_neighbors(molecule: Molecule) -> list[Molecule]:
@@ -205,20 +215,18 @@ def find_neighbors_and_filter_without_duplicates(
     return neighbors
 
 
-def find_neighbors(molecule: Molecule, max_depth: int) -> set[str]:
+def find_neighbors(molecule: Molecule, max_depth: int, info: bool = False) -> tuple[list[str], list[Action]] | set[str]:
     """Iteratively find the neighbors of a molecule up to a certain depth.
     Explore all neighbors at level 1 then all neighbors at level 2 and so on.
 
     Args:
         molecule (Molecule): Molecule to explore
         max_depth (int): Maximum depth to explore
+        info (bool): Whether to return the actions applied along with the molecules
 
     Returns:
         set[str]: set of molecules found
     """
-    # set of neighbors found
-    neighbors: set[str] = set()
-
     # queue of molecules to explore
     queue: set[Molecule] = {molecule}
 
@@ -226,24 +234,51 @@ def find_neighbors(molecule: Molecule, max_depth: int) -> set[str]:
     depth = 1
 
     # explore the neighbors of the molecule up to the maximum depth
-    while depth <= max_depth:
-        # set of neighbors found in this depth
-        next_queue = set()
-        # for each molecule in the queue, find the neighbors
-        for current_mol in queue:
-            for new_mol in set_of_neighbors(current_mol):
-                new_smi = str(new_mol)
-                # add the new molecule to the set of neighbors if it is not
-                # already in it, don't add it if it is already in the set
-                # as it has already been explored
-                if new_smi not in neighbors:
-                    next_queue.add(new_mol)
-                    neighbors.add(new_smi)
-        # update the queue with the new neighbors and increase the depth
-        queue = next_queue
-        depth += 1
+    if info:
+        # lis of neighbors found
+        neighbors: list[str] = []
+        actions: list[Action] = []
+        while depth <= max_depth:
+            # set of neighbors found in this depth
+            next_queue = set()
+            # for each molecule in the queue, find the neighbors
+            for current_mol in queue:
+                for new_mol, action in set_of_neighbors(current_mol, info):
+                    new_smi = str(new_mol)
+                    # add the new molecule to the set of neighbors if it is not
+                    # already in it, don't add it if it is already in the set
+                    # as it has already been explored
+                    if new_smi not in neighbors:
+                        next_queue.add(new_mol)
+                        neighbors.append(new_smi)
+                        actions.append(action)
+            # update the queue with the new neighbors and increase the depth
+            queue = next_queue
+            depth += 1
 
-    return neighbors
+        return neighbors, actions
+    else:
+        # set of neighbors found
+        neighbors: set[str] = set()
+
+        while depth <= max_depth:
+            # set of neighbors found in this depth
+            next_queue = set()
+            # for each molecule in the queue, find the neighbors
+            for current_mol in queue:
+                for new_mol in set_of_neighbors(current_mol):
+                    new_smi = str(new_mol)
+                    # add the new molecule to the set of neighbors if it is not
+                    # already in it, don't add it if it is already in the set
+                    # as it has already been explored
+                    if new_smi not in neighbors:
+                        next_queue.add(new_mol)
+                        neighbors.add(new_smi)
+            # update the queue with the new neighbors and increase the depth
+            queue = next_queue
+            depth += 1
+
+        return neighbors
 
 
 def parallel_find_neighbors(smiles: str, depth: int) -> set[str]:
