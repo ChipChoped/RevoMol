@@ -102,7 +102,7 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, only_valid:
 
 def walk(start_smiles: str, n_steps: int, action_space: list[Action],
          fitness_functions: list[Function], strategy: str= "random", evaluation_function: Function = None,
-         only_valid: bool = True)\
+         only_valid: bool = True, path: str = "results")\
     -> tuple[list[str], list[bool], dict[str, list[float]]]:
     """
     Perform an adaptive walk with a starting molecule and a set of allowed action.
@@ -115,6 +115,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
         strategy (str): The type of walk to perform ("random" or "adaptive")
         evaluation_function (Function): The fitness function to evaluate neighbors in adaptive walks
         only_valid (bool): If True, only valid molecules will be kept during the random walk
+        path (str): The path to the directory where results are stored
 
     Returns:
         list[str]: The path took during the random walk (list of smiles)
@@ -131,7 +132,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
     print("----------Step 0----------")
     print("Molecule:", start_smiles)
 
-    path: list[str] = [start_smiles]  # All molecules encountered
+    molecules: list[str] = [start_smiles]  # All molecules encountered
     are_valid: list[bool] = [evaluator.is_valid_molecule(start_mol, evaluations)]  # Validity of molecules encountered
     print("Is valid:", are_valid[0])
 
@@ -148,9 +149,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
         plateau: list[int] = []
         plateaus: list[tuple[float, list[int]]] = []
 
-    with open("./results/" + strategy + "_walk/" + only_valid_str + "/" + str(n_steps) + "/" + start_smiles + "/"
-              + "_".join([action.__name__ for action in MolecularGraph.action_space]) + "/" + evaluation_function_str
-              + "walk.csv", "a", newline='') as file:
+    with open(path + "walk.csv", "a", newline='') as file:
         writer = csv.writer(file)
 
         csv_row = ["smiles", "is_valid"]
@@ -220,15 +219,13 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
                     if len(plateau) > 0:
                         plateaus.append((start_fitness, plateau))
 
-                        with open("./results/" + strategy + "_walk/" + only_valid_str + "/" + str(n_steps) + "/"
-                                  + path[0] + "/" + "_".join([action.__name__ for action in MolecularGraph.action_space]) + "/"
-                                  + evaluation_function_str + "plateaus.csv", "w") as plateau_file:
+                        with open(path + "plateaus.csv", "w") as plateau_file:
                             plateau_writer = csv.writer(plateau_file)
                             plateau_writer.writerow(["step", "smiles", "start_smiles", "fitness"])
 
                             for p in plateaus:
                                 for s in p[1]:
-                                    plateau_writer.writerow([s, start_smiles, path[0], p[0]])
+                                    plateau_writer.writerow([s, start_smiles, molecules[0], p[0]])
 
                     break
                 elif neighbor_fitness == start_fitness:
@@ -248,7 +245,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
             neighbor_mol = Molecule(neighbor)
             print("Molecule:", neighbor)
 
-            path.append(neighbor)
+            molecules.append(neighbor)
             are_valid.append(evaluator.is_valid_molecule(neighbor_mol, evaluations))
             print("Is valid:", (are_valid[-1]))
 
@@ -281,18 +278,16 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
             csv_row.extend([action.class_name(), action_context])
 
     if strategy == "adaptive":
-        with open("./results/" + strategy + "_walk/" + only_valid_str + "/" + str(n_steps) + "/"
-                  + path[0] + "/" + "_".join([action.__name__ for action in MolecularGraph.action_space]) + "/"
-                  + evaluation_function_str + "local_optimum.csv", "w") as file:
+        with open(path + "local_optimum.csv", "w") as file:
             writer = csv.writer(file)
 
-            if len(path) - 1 != n_steps:
+            if len(molecules) - 1 != n_steps:
                 row = ["smiles", "start_smiles", "is_valid", "steps_taken", "evaluation_function"]
                 row.extend([function.name for function in fitness_functions])
 
                 writer.writerow(row)
 
-                row = [start_smiles, path[0], are_valid[-1], len(path) - 1, evaluation_function.name]
+                row = [start_smiles, molecules[0], are_valid[-1], len(molecules) - 1, evaluation_function.name]
                 row.extend([str(fitness[-1]) for fitness in fitnesses.values()])
 
                 writer.writerow(row)
@@ -301,4 +296,4 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
 
 
 
-    return path, are_valid, fitnesses
+    return molecules, are_valid, fitnesses

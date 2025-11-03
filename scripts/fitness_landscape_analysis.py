@@ -119,7 +119,7 @@ def delta_fitness_distance_correlation(all_fitnesses: dict[str, list[float]], di
 def correlations(start_smiles: str, n_steps: int, action_space: list[Action],
                  fitness_functions: list[Function], distance_functions: list[Distance],
                  strategy: str = "random", evaluation_function: Function = None,
-                 only_valid: bool = True) -> float:
+                 only_valid: bool = True, path: str = "results") -> float:
     """
     Compute the fitnesses correlations and the distances-fitnesses correlations between a starting molecule
     and molecules encountered during a random walk.
@@ -133,6 +133,7 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[Action],
         strategy (str): The type of walk to perform ("random" or "adaptive")
         evaluation_function (Function): The fitness function to evaluate neighbors in adaptive walks
         only_valid (bool): If True, only valid molecules will be kept during the random walk
+        path (str): The path to the directory where results are stored
 
     Return:
         list[float]: A list of fitnesses correlation
@@ -145,20 +146,18 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[Action],
     if only_valid and Silly_Walks in fitness_functions:
         fitness_functions.remove(Silly_Walks)
 
-    molecules, are_valid, all_fitnesses = cast(tuple[list[str], list[bool], dict[str, list[float]]],
-                                               walk(start_smiles, n_steps, action_space, fitness_functions,
-                                                    strategy, evaluation_function, only_valid))
-
-    print("\n---Correlation coefficient(s)---\n")
-
     evaluation_function_str: str = ""
 
     if strategy == "adaptive":
         evaluation_function_str = evaluation_function.name + "/"
 
-    with open("./results/" + strategy + "_walk/" + only_valid_str + "/" + str(n_steps) + "/" + start_smiles + "/"
-              + "_".join([action.__name__ for action in action_space]) + "/" + evaluation_function_str
-              + "fitness_auto_correlations.csv", "a", newline='') as file:
+    molecules, are_valid, all_fitnesses = cast(tuple[list[str], list[bool], dict[str, list[float]]],
+                                               walk(start_smiles, n_steps, action_space, fitness_functions,
+                                                    strategy, evaluation_function, only_valid, path))
+
+    print("\n---Correlation coefficient(s)---\n")
+
+    with open(path + "fitness_auto_correlations.csv", "a", newline='') as file:
         writer = csv.writer(file)
 
         row = ["lag"]
@@ -181,10 +180,6 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[Action],
             writer.writerow(row)
 
     print()
-
-    path = "./results/" + strategy + "_walk/" + only_valid_str + "/" + str(n_steps) + "/" + start_smiles + "/" \
-           + "_".join([action.__name__ for action in action_space]) + "/" + evaluation_function_str
-
     with open(path + "distance_fitness_correlations.csv", "a", newline='') as file:
         writer = csv.writer(file)
         writer.writerow(["fitness_function", "distance_function", "correlation_coefficient"])
@@ -226,8 +221,11 @@ def main() -> None:
                         default=None)
     parser.add_argument("--only-valid", action="store_true",
                         help="If set, only valid molecules will be kept during the walk", dest="only_valid")
+    parser.add_argument("--seed", type=int, help="Random seed to use", dest="seed", default=0)
 
     arguments: argparse.Namespace = parser.parse_args()
+
+    random.seed(arguments.seed)
 
     action_space: list[Action] = [eval("mg." + action) for action in arguments.actions]
 
@@ -252,7 +250,8 @@ def main() -> None:
 
     path = ("./results/" + arguments.strategy + "_walk/" + only_valid_str + "/" + str(arguments.n_steps) + "/"
             + arguments.smiles + "/" + str(arguments.actions).replace("', '", "_")
-            .replace("['", "").replace("']", "") + "/" + evaluation_function_str)
+            .replace("['", "").replace("']", "") + "/" + evaluation_function_str
+            + str(arguments.seed) + "/")
 
     print()
     print(path)
@@ -264,9 +263,8 @@ def main() -> None:
                  [QED, SAScore, LogP, PLogP, Silly_Walks],
                  [Tanimoto, Levenshtein, GED, NormalizedGED],
                  strategy=arguments.strategy, evaluation_function=evaluation_function,
-                 only_valid=arguments.only_valid)
+                 only_valid=arguments.only_valid, path = path)
 
-    print()
     print()
 
 
