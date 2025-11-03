@@ -239,19 +239,21 @@ def main() -> None:
             exit(1)
 
     evaluation_function_str: str = ""
+    seed_str: str = ""
 
     if arguments.strategy == "adaptive" and evaluation_function is None:
         print("Error: An evaluation function must be provided for adaptive walks")
         exit(1)
     elif arguments.strategy == "adaptive" and evaluation_function is not None:
         evaluation_function_str: str = arguments.evaluation_function + "/"
+    elif arguments.strategy == "random":
+        evaluation_function_str = str(arguments.seed) + "/"
 
     only_valid_str: str = "only_valid" if parser.parse_args().only_valid else "not_all_valid"
 
     path = ("./results/" + arguments.strategy + "_walk/" + only_valid_str + "/" + str(arguments.n_steps) + "/"
             + arguments.smiles + "/" + str(arguments.actions).replace("', '", "_")
-            .replace("['", "").replace("']", "") + "/" + evaluation_function_str
-            + str(arguments.seed) + "/")
+            .replace("['", "").replace("']", "") + "/" + evaluation_function_str + seed_str)
 
     print()
     print(path)
