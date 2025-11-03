@@ -1,4 +1,4 @@
-rdkit==2024.3.5
+rdkit==2025.9.1
 networkx>=3.2
 typing_extensions>=4.12
 typer>=0.12

@@ -4,10 +4,12 @@ import os
 import random
 import sys
 from argparse import ArgumentParser
-from datetime import datetime
 from typing import cast
 
 import numpy as np
+
+# Add the parent directory to the path to import the module evomol
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from evomol.distance.ged import GED, NormalizedGED
 from scripts.walk import walk
@@ -28,7 +30,7 @@ from evomol.evaluation.sa_score import SAScore
 from evomol.evaluation.logp import LogP
 from evomol.evaluation.plogp import PLogP
 from evomol.evaluation.silly_walks import Silly_Walks
-from evomol.action import molecular_graph as mg, Action
+from evomol.action import Action, molecular_graph as mg
 
 
 def fitness_auto_correlation(fitnesses: list[float], max_lag: int) -> list[float]:
@@ -215,7 +217,7 @@ def main() -> None:
     parser.add_argument("-a", required=True, type=str, help="Actions to perform (space separated)",
                         choices=("AddAtomMG", "AddGroupMG", "ChangeBondMG", "CutAtomMG", "InsertCarbonMG",
                                  "MoveGroupMG", "RemoveAtomMG", "RemoveGroupMG", "SubstituteAtomMG"),
-                        dest="actions", nargs="+")
+                        dest="actions", nargs="+", default=[])
     parser.add_argument("-e", type=str, choices=("QED", "SAScore", "LogP", "PLogP", "Silly_Walks"),
                         help="The evaluation function to use in adaptive walks", dest="evaluation_function",
                         default=None)
