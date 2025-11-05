@@ -223,11 +223,15 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
 
                         with open(path + "plateaus.csv", "w") as plateau_file:
                             plateau_writer = csv.writer(plateau_file)
-                            plateau_writer.writerow(["step", "smiles", "start_smiles", "fitness"])
+                            row = ["step", "smiles", "start_smiles", "evaluation_function"]
+                            row.extend([function.name for function in fitness_functions])
+                            plateau_writer.writerow(row)
 
                             for p in plateaus:
                                 for s in p[1]:
-                                    plateau_writer.writerow([s, start_smiles, molecules[0], p[0]])
+                                    plateau_writer.writerow([s, start_smiles, molecules[0], evaluation_function.name,
+                                                             *[str(fitnesses[function.name][s]) for function in
+                                                               fitness_functions]])
 
                     break
                 elif neighbor_fitness == start_fitness:
