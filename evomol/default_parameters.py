@@ -46,6 +46,7 @@ def setup_default_action_space(
     ]
 
     mg.ChangeBondMG.avoid_bond_breaking = False
+    mg.ChangeBondMG.avoid_bond_forming = False
 
     mg.RemoveGroupMG.remove_only_smallest = True
     mg.RemoveGroupMG.remove_only_single_bond = False

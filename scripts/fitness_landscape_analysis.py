@@ -121,7 +121,7 @@ def delta_fitness_distance_correlation(all_fitnesses: dict[str, list[float]], di
 def correlations(start_smiles: str, n_steps: int, action_space: list[Action],
                  fitness_functions: list[Function], distance_functions: list[Distance],
                  strategy: str = "random", evaluation_function: Function = None,
-                 only_valid: bool = True, path: str = "results") -> float:
+                 only_valid: bool = True, path: str = "results", soft_change_bond: bool = False) -> float:
     """
     Compute the fitnesses correlations and the distances-fitnesses correlations between a starting molecule
     and molecules encountered during a random walk.
@@ -134,8 +134,9 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[Action],
         distance_functions (list[Distance]): A list of distance functions
         strategy (str): The type of walk to perform ("random" or "adaptive")
         evaluation_function (Function): The fitness function to evaluate neighbors in adaptive walks
-        only_valid (bool): If True, only valid molecules will be kept during the random walk
+        only_valid (bool): If True, only valid molecules will be kept during the random walk (True by default)
         path (str): The path to the directory where results are stored
+        soft_change_bond (bool): If True, bond breaking and formation won't be allowed (False by default)
 
     Return:
         list[float]: A list of fitnesses correlation
@@ -143,19 +144,14 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[Action],
     """
     dp.setup_default_parameters()
 
-    only_valid_str: str = "only_valid" if only_valid else "not_all_valid"
-
     if only_valid and Silly_Walks in fitness_functions:
         fitness_functions.remove(Silly_Walks)
 
-    evaluation_function_str: str = ""
-
-    if strategy == "adaptive":
-        evaluation_function_str = evaluation_function.name + "/"
-
     molecules, are_valid, all_fitnesses = cast(tuple[list[str], list[bool], dict[str, list[float]]],
                                                walk(start_smiles, n_steps, action_space, fitness_functions,
-                                                    strategy, evaluation_function, only_valid, path))
+                                                    strategy=strategy, evaluation_function=evaluation_function,
+                                                    only_valid=only_valid, path=path,
+                                                    soft_change_bond=soft_change_bond))
 
     print("\n---Correlation coefficient(s)---\n")
 
@@ -218,12 +214,14 @@ def main() -> None:
                         choices=("AddAtomMG", "AddGroupMG", "ChangeBondMG", "CutAtomMG", "InsertCarbonMG",
                                  "MoveGroupMG", "RemoveAtomMG", "RemoveGroupMG", "SubstituteAtomMG"),
                         dest="actions", nargs="+", default=[])
-    parser.add_argument("-e", type=str, choices=("QED", "SAScore", "LogP", "PLogP", "Silly_Walks"),
+    parser.add_argument("-e", "--evaluation", type=str, choices=("QED", "SAScore", "LogP", "PLogP", "Silly_Walks"),
                         help="The evaluation function to use in adaptive walks", dest="evaluation_function",
                         default=None)
-    parser.add_argument("--only-valid", action="store_true",
+    parser.add_argument("-o", "--only-valid", action="store_true",
                         help="If set, only valid molecules will be kept during the walk", dest="only_valid")
-    parser.add_argument("--seed", type=int, help="Random seed to use", dest="seed", default=0)
+    parser.add_argument("-s", "--seed", type=int, help="Random seed to use", dest="seed", default=0)
+    parser.add_argument("-b", "--soft-change-bond", action="store_true",
+                        help="If set, bond breaking and formation won't be allowed", dest="soft_change_bond")
 
     arguments: argparse.Namespace = parser.parse_args()
 
@@ -253,8 +251,15 @@ def main() -> None:
 
     only_valid_str: str = "only_valid" if parser.parse_args().only_valid else "not_all_valid"
 
+    if arguments.soft_change_bond and "ChangeBondMG" in arguments.actions:
+        path_actions = arguments.actions.copy()
+        path_actions.remove("ChangeBondMG")
+        path_actions.append("SoftChangeBondMG")
+    else:
+        path_actions = arguments.actions
+
     path = ("./results/" + arguments.strategy + "_walk/" + only_valid_str + "/" + str(arguments.n_steps) + "/"
-            + arguments.smiles + "/" + str(arguments.actions).replace("', '", "_")
+            + arguments.smiles + "/" + str(path_actions).replace("', '", "_")
             .replace("['", "").replace("']", "") + "/" + evaluation_function_str + seed_str)
 
     print()
@@ -267,7 +272,7 @@ def main() -> None:
                  [QED, SAScore, LogP, PLogP, Silly_Walks],
                  [Tanimoto, Levenshtein, GED, NormalizedGED],
                  strategy=arguments.strategy, evaluation_function=evaluation_function,
-                 only_valid=arguments.only_valid, path = path)
+                 only_valid=arguments.only_valid, path=path, soft_change_bond=arguments.soft_change_bond)
 
     print()
 

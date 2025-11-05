@@ -9,6 +9,7 @@ from evomol.evaluation import Function, ZincNormalizedLogP, NormalizedSAScore, C
     Evaluation
 from evomol.representation import Molecule, MolecularGraph
 from evomol.search import enumeration as en
+from evomol.action import molecular_graph as mg
 
 
 def get_random_neighbor(start_smiles: str, only_valid: bool = True) -> tuple[str, Action | None, int]:
@@ -102,7 +103,7 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, only_valid:
 
 def walk(start_smiles: str, n_steps: int, action_space: list[Action],
          fitness_functions: list[Function], strategy: str= "random", evaluation_function: Function = None,
-         only_valid: bool = True, path: str = "results")\
+         only_valid: bool = True, path: str = "results", soft_change_bond: bool = False)\
     -> tuple[list[str], list[bool], dict[str, list[float]]]:
     """
     Perform an adaptive walk with a starting molecule and a set of allowed action.
@@ -116,6 +117,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
         evaluation_function (Function): The fitness function to evaluate neighbors in adaptive walks
         only_valid (bool): If True, only valid molecules will be kept during the random walk
         path (str): The path to the directory where results are stored
+        soft_change_bond (bool): If True, bond breaking and formation won't be allowed (False by default)
 
     Returns:
         list[str]: The path took during the random walk (list of smiles)
@@ -124,6 +126,11 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
     """
     # Initialize and set the action space
     dp.setup_default_action_space()
+
+    if soft_change_bond:
+        mg.ChangeBondMG.avoid_bond_breaking = True
+        mg.ChangeBondMG.avoid_bond_forming = True
+
     MolecularGraph.action_space = cast(list[type[Action]], cast(object, action_space))
 
     evaluations: list[Evaluation] = dp.setup_filters("chembl_zinc")
@@ -136,14 +143,9 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
     are_valid: list[bool] = [evaluator.is_valid_molecule(start_mol, evaluations)]  # Validity of molecules encountered
     print("Is valid:", are_valid[0])
 
-    only_valid_str: str = "only_valid" if only_valid else "not_all_valid"
-
     fitnesses: dict[str, list[float]] = dict()  # All fitnesses of molecules encountered
 
-    evaluation_function_str: str = ""
-
     if strategy == "adaptive":
-        evaluation_function_str: str = evaluation_function.name + "/"
         start_fitness: float = evaluation_function.evaluate(start_mol)
 
         plateau: list[int] = []

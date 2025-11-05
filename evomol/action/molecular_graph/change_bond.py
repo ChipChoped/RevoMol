@@ -19,6 +19,7 @@ class ChangeBondMG(ActionMolGraph):
     """
 
     avoid_bond_breaking: bool = False
+    avoid_bond_forming: bool = False
 
     def __init__(
         self,
@@ -117,14 +118,13 @@ class ChangeBondMG(ActionMolGraph):
                         not bridge_bonds_matrix[atom1][atom2]
                         and not cls.avoid_bond_breaking
                     ):
-                        action_list.append(
-                            ChangeBondMG(molecule, atom1, atom2, new_bond)
-                        )
+                        action_list.append(ChangeBondMG(molecule, atom1, atom2, new_bond))
 
                 # Bond increment
                 # Bond can be incremented only if the new bond is less than
                 # the maximum bond that can be formed between the two atoms
                 elif max_bond >= new_bond:
-                    action_list.append(ChangeBondMG(molecule, atom1, atom2, new_bond))
+                    if not (cls.avoid_bond_forming and current_bond == 0):
+                        action_list.append(ChangeBondMG(molecule, atom1, atom2, new_bond))
 
         return action_list
