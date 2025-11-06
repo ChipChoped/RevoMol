@@ -23,32 +23,38 @@ dp.setup_default_parameters(
     max_heavy_atoms=10,
 )
 
+os.makedirs("output/visualization", exist_ok=True)
+
 molecules = [
+    # Molecule("CCO"),
+    # Molecule("CCC"),
+    # Molecule("CCN"),
+    # Molecule("CCCCCC"),
+    # Molecule("C1=CSC(=C2SC=CS2)S1"),
+    # Molecule("N1=S=NC2=C1N=S=N2"),
+    # Molecule(
+    #     "C1=CC(=CC=C1C2=C3C=CC(=C(C4=NC(=C(C5=CC=C(N5)C(=C6C=CC2=N6)C7=CC="
+    #     "C(C=C7)C(=O)O)C8=CC=C(C=C8)C(=O)O)C=C4)C9=CC=C(C=C9)C(=O)O)N3)C(=O)O"
+    # ),
+    Molecule("CO"),
     Molecule("CCO"),
     Molecule("CCC"),
-    Molecule("CCN"),
-    Molecule("CCCCCC"),
-    Molecule("C1=CSC(=C2SC=CS2)S1"),
-    Molecule("N1=S=NC2=C1N=S=N2"),
-    Molecule(
-        "C1=CC(=CC=C1C2=C3C=CC(=C(C4=NC(=C(C5=CC=C(N5)C(=C6C=CC2=N6)C7=CC="
-        "C(C=C7)C(=O)O)C8=CC=C(C=C8)C(=O)O)C=C4)C9=CC=C(C=C9)C(=O)O)N3)C(=O)O"
-    ),
+    Molecule("C1=CC=CC=C1"),
 ]
 
-note_on_atoms = {0: "A", 1: "B", 2: "C"}
-note_on_bonds = {0: "bond A", 1: "bond B"}
-svg_1 = mol_to_svg(
-    molecules[0],
-    notes_on_atoms=note_on_atoms,
-    notes_on_bonds=note_on_bonds,
-)
-
-draw_in_matplotlib(
-    svg_1,
-    show=False,
-    save_to_path=os.path.join("output", "visualization", "CCO.png"),
-)
+# note_on_atoms = {0: "A", 1: "B", 2: "C"}
+# note_on_bonds = {0: "bond A", 1: "bond B"}
+# svg_1 = mol_to_svg(
+#     molecules[0],
+#     notes_on_atoms=note_on_atoms,
+#     notes_on_bonds=note_on_bonds,
+# )
+#
+# draw_in_matplotlib(
+#     svg_1,
+#     show=False,
+#     save_to_path=os.path.join("output", "visualization", "CCO.png"),
+# )
 
 svgs = [mol_to_svg(mol) for mol in molecules]
 draw_multiple_svgs_in_matplotlib(
