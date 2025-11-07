@@ -111,5 +111,6 @@ ENV/
 external_data/
 
 results/
-
 output/
+
+slurm/
