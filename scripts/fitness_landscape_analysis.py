@@ -155,49 +155,60 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[Action],
 
     print("\n---Correlation coefficient(s)---\n")
 
-    with open(path + "fitness_auto_correlations.csv", "a", newline='') as file:
-        writer = csv.writer(file)
+    if len(molecules) > 2:
+        with open(path + "fitness_auto_correlations.csv", "a", newline='') as file:
+            writer = csv.writer(file)
 
-        row = ["lag"]
-        row.extend(all_fitnesses.keys())
-
-        writer.writerow(row)
-
-        max_lag = min(100, len(molecules) - 1)
-        fitness_auto_correlation_coefficients: dict[str, list[float]] = dict()
-
-        for fitness_function_name, fitnesses in zip(all_fitnesses.keys(), all_fitnesses.values()):
-            fitness_auto_correlation_coefficients[fitness_function_name] = fitness_auto_correlation(fitnesses, max_lag)
-            print(fitness_function_name + ":", fitness_auto_correlation_coefficients[fitness_function_name][0])
-
-        for l in range(max_lag - 1):
-            row = [str(l + 1)]
-            row.extend(iter(map(str, [fitness_auto_correlation_coefficients[fitness_function_name][l]
-                                      for fitness_function_name in all_fitnesses.keys()])))
+            row = ["lag"]
+            row.extend(all_fitnesses.keys())
 
             writer.writerow(row)
 
-    print()
-    with open(path + "distance_fitness_correlations.csv", "a", newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow(["fitness_function", "distance_function", "correlation_coefficient"])
+            max_lag = min(100, len(molecules) - 1)
+            fitness_auto_correlation_coefficients: dict[str, list[float]] = dict()
 
-        sample_size = min(100, len(molecules))
+            for fitness_function_name, fitnesses in zip(all_fitnesses.keys(), all_fitnesses.values()):
+                fitness_auto_correlation_coefficients[fitness_function_name] = fitness_auto_correlation(fitnesses, max_lag)
+                print(fitness_function_name + ":", fitness_auto_correlation_coefficients[fitness_function_name][0])
 
-        delta_fitness_distance_correlation_coefficient: dict[str, dict[str, float]] \
-            = delta_fitness_distance_correlation(all_fitnesses, distance_functions, molecules, path, sample_size)
+            for l in range(max_lag - 1):
+                row = [str(l + 1)]
+                row.extend(iter(map(str, [fitness_auto_correlation_coefficients[fitness_function_name][l]
+                                          for fitness_function_name in all_fitnesses.keys()])))
 
-        for fitness_function_name in delta_fitness_distance_correlation_coefficient.keys():
-            for distance_function_name in delta_fitness_distance_correlation_coefficient[fitness_function_name].keys():
-                print(fitness_function_name + "-" + distance_function_name + ":",
-                      delta_fitness_distance_correlation_coefficient[fitness_function_name][distance_function_name])
+                writer.writerow(row)
 
-                writer.writerow([fitness_function_name, distance_function_name,
-                                 delta_fitness_distance_correlation_coefficient
-                                 [fitness_function_name][distance_function_name]])
-
-            print()
         print()
+        with open(path + "delta_fitness_distance_correlations.csv", "a", newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(["fitness_function", "distance_function", "correlation_coefficient"])
+
+            sample_size = min(100, len(molecules))
+
+            delta_fitness_distance_correlation_coefficient: dict[str, dict[str, float]] \
+                = delta_fitness_distance_correlation(all_fitnesses, distance_functions, molecules, path, sample_size)
+
+            for fitness_function_name in delta_fitness_distance_correlation_coefficient.keys():
+                for distance_function_name in delta_fitness_distance_correlation_coefficient[fitness_function_name].keys():
+                    print(fitness_function_name + "-" + distance_function_name + ":",
+                          delta_fitness_distance_correlation_coefficient[fitness_function_name][distance_function_name])
+
+                    writer.writerow([fitness_function_name, distance_function_name,
+                                     delta_fitness_distance_correlation_coefficient
+                                     [fitness_function_name][distance_function_name]])
+
+                print()
+            print()
+    else:
+        print("Not enough molecules were generated to compute correlations.")
+
+        with open(path + "fitness_auto_correlations.csv", "a", newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow("Not enough molecules were generated to compute the auto-correlations.")
+
+        with open(path + "delta_fitness_distance_correlations.csv", "a", newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow("Not enough molecules were generated to compute the delta-fitness-distance correlations.")
 
     return 0
 
