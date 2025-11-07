@@ -6,10 +6,25 @@ from evomol import default_parameters as dp
 from evomol import evaluation as evaluator
 from evomol.action import Action
 from evomol.evaluation import Function, ZincNormalizedLogP, NormalizedSAScore, CycleScore, NormalizedCycleScore, \
-    Evaluation
+    Evaluation, LogP, SAScore
 from evomol.representation import Molecule, MolecularGraph
 from evomol.search import enumeration as en
 from evomol.action import molecular_graph as mg
+
+
+def set_plogp_values(mol: Molecule) -> None:
+    """
+    Set all the values needed for the PLogP evaluation in a molecule.
+
+    Arg:
+        mol (Molecule): The molecule to set the values for
+    """
+    mol.set_value("logP", LogP.evaluate(mol))
+    mol.set_value("zinc_normalized_logP", ZincNormalizedLogP.evaluate(mol))
+    mol.set_value("sa_score", SAScore.evaluate(mol))
+    mol.set_value("zinc_normalized_sa_score", NormalizedSAScore.evaluate(mol))
+    mol.set_value("CycleScore", CycleScore.evaluate(mol))
+    mol.set_value("zinc_normalized_cycle_score", NormalizedCycleScore.evaluate(mol))
 
 
 def get_random_neighbor(start_smiles: str, only_valid: bool = True) -> tuple[str, Action | None, int]:
@@ -50,7 +65,7 @@ def get_random_neighbor(start_smiles: str, only_valid: bool = True) -> tuple[str
 
 
 def get_best_neighbor(start_smiles: str, fitness_function: Function, only_valid: bool = True)\
-    -> tuple[str, int, int] | tuple[str, Action, float, int]:
+    -> tuple[str, Action | None, float, int]:
     """
     Get the neighbor with the highest fitness equal or higher than the starting molecule.
 
@@ -82,9 +97,13 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, only_valid:
         neighborhood = valid_smiles
 
     if len(neighborhood) == 0:
-        return "", 0, 0
+        return "", None, 0, 0
     else:
         start_mol = Molecule(start_smiles)
+
+        if fitness_function.name == "PLogP":
+            set_plogp_values(start_mol)
+
         start_fitness = fitness_function.evaluate(start_mol)
 
         best_neighbor: tuple[str, Action | None] = ("", None)
@@ -92,6 +111,10 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, only_valid:
 
         for neighbor in neighborhood:
             neighbor_mol = Molecule(neighbor[0])
+
+            if fitness_function.name == "PLogP":
+                set_plogp_values(neighbor_mol)
+
             neighbor_fitness = fitness_function.evaluate(neighbor_mol)
 
             if neighbor_fitness >= best_fitness:
@@ -146,6 +169,10 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
     fitnesses: dict[str, list[float]] = dict()  # All fitnesses of molecules encountered
 
     if strategy == "adaptive":
+        # Evaluation needed for the PlogP calculation
+        if evaluation_function.name == "PLogP":
+            set_plogp_values(start_mol)
+
         start_fitness: float = evaluation_function.evaluate(start_mol)
 
         plateau: list[int] = []
@@ -165,14 +192,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
             function_name = fitness_function.name
 
             if function_name == "PLogP":
-                start_mol.set_value("zinc_normalized_logP",
-                                    ZincNormalizedLogP.evaluate(start_mol))
-                start_mol.set_value("zinc_normalized_sa_score",
-                                    NormalizedSAScore.evaluate(start_mol))
-                start_mol.set_value("CycleScore",
-                                    CycleScore.evaluate(start_mol))
-                start_mol.set_value("zinc_normalized_cycle_score",
-                                    NormalizedCycleScore.evaluate(start_mol))
+                set_plogp_values(start_mol)
 
             fitness = fitness_function.evaluate(start_mol)
             fitnesses[function_name] = [fitness]
@@ -259,14 +279,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
                 function_name = fitness_function.name
 
                 if fitness_function.name == "PLogP":
-                    neighbor_mol.set_value("zinc_normalized_logP",
-                                                ZincNormalizedLogP.evaluate(neighbor_mol))
-                    neighbor_mol.set_value("zinc_normalized_sa_score",
-                                                NormalizedSAScore.evaluate(neighbor_mol))
-                    neighbor_mol.set_value("CycleScore",
-                                                CycleScore.evaluate(neighbor_mol))
-                    neighbor_mol.set_value("zinc_normalized_cycle_score",
-                                                NormalizedCycleScore.evaluate(neighbor_mol))
+                    set_plogp_values(neighbor_mol)
 
                 fitness = fitness_function.evaluate(neighbor_mol)
                 fitnesses[function_name].append(fitness)
