@@ -57,7 +57,6 @@ if __name__ == "__main__":
 
     molecules : DataFrame = pd.read_csv(arguments.input_file)
     molecules = molecules[molecules["mode"] == "not_all_valid"]
-    print(molecules.head())
 
     for (index, row), tqdm in zip(molecules.iterrows(),
                                 tqdm(range(len(molecules)), desc="Processing molecules", total=len(molecules))):
