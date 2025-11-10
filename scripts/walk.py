@@ -6,7 +6,8 @@ from evomol import default_parameters as dp
 from evomol import evaluation as evaluator
 from evomol.action import Action
 from evomol.evaluation import Function, ZincNormalizedLogP, NormalizedSAScore, CycleScore, NormalizedCycleScore, \
-    Evaluation, LogP, SAScore
+    Evaluation, LogP, SAScore, QED, PLogP
+from evomol.evaluation.silly_walks import Silly_Walks
 from evomol.representation import Molecule, MolecularGraph
 from evomol.search import enumeration as en
 from evomol.action import molecular_graph as mg
@@ -117,7 +118,8 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, only_valid:
 
             neighbor_fitness = fitness_function.evaluate(neighbor_mol)
 
-            if neighbor_fitness >= best_fitness:
+            if (fitness_function in [QED] and neighbor_fitness >= best_fitness) or \
+                (fitness_function in [SAScore, LogP, PLogP, Silly_Walks] and neighbor_fitness <= best_fitness):
                 best_fitness = neighbor_fitness
                 best_neighbor = neighbor
 
@@ -241,7 +243,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
                     if len(plateau) > 0:
                         plateaus.append((start_fitness, plateau))
 
-                        with open(path + "plateaus.csv", "w") as plateau_file:
+                        with open(path + "plateaus.csv", "w", newline='') as plateau_file:
                             plateau_writer = csv.writer(plateau_file)
                             row = ["step", "smiles", "start_smiles", "evaluation_function"]
                             row.extend([function.name for function in fitness_functions])
@@ -297,7 +299,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
             csv_row.extend([action.class_name(), action_context])
 
     if strategy == "adaptive":
-        with open(path + "local_optimum.csv", "w") as file:
+        with open(path + "local_optimum.csv", "w", newline='') as file:
             writer = csv.writer(file)
 
             if len(molecules) - 1 != n_steps:
