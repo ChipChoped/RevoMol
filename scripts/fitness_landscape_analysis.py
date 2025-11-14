@@ -271,7 +271,7 @@ def main() -> None:
 
     path = ("./results/" + arguments.strategy + "_walk/" + only_valid_str + "/" + str(arguments.n_steps) + "/"
             + arguments.smiles + "/" + str(path_actions).replace("', '", "_")
-            .replace("['", "").replace("']", "") + "/" + evaluation_function_str + seed_str)
+            .replace("['", "").replace("']", "") + "/" + evaluation_function_str)
 
     print()
     print(path)
