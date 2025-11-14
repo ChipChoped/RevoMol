@@ -110,7 +110,13 @@ ENV/
 
 external_data/
 
+notebooks/
+
 results/
 output/
+plots/
 
 slurm/
+bash/
+
+/*.zip
