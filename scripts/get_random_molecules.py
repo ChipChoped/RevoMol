@@ -3,6 +3,10 @@ import csv
 
 import pandas as pd
 
+from evomol.distance.ged import GED, NormalizedGED
+from evomol.distance.levenshtein import Levenshtein
+from evomol.distance.tanimoto import Tanimoto
+
 if __name__ == "__main__":
     MODES = ["not_all_valid", "only_valid"]
     STEPS = 1000
@@ -38,7 +42,8 @@ if __name__ == "__main__":
     with open(os.path.join(PATH, "random_molecules_summary.csv"), "w") as f:
         writer = csv.writer(f, lineterminator='\n')
 
-        row = ["mode", "steps", "seed", "action_space", "start_molecule", "final_molecule", "is_valid"]
+        row = ["mode", "steps", "seed", "action_space", "start_molecule", "final_molecule", "is_valid",
+               "tanimoto", "levenstein", "ged", "normalized_ged"]
         row.extend(FUNCTIONS)
 
         writer.writerow(row)
@@ -54,6 +59,9 @@ if __name__ == "__main__":
 
                                 row = [mode, STEPS, seed, action_space, start_molecule, df["smiles"].values[0],
                                        df["is_valid"].values[0]]
+
+                                for distance in [Tanimoto, Levenshtein, GED, NormalizedGED]:
+                                    row.append(distance.distance(start_molecule, df["smiles"].values[0]))
 
                                 if mode == "not_all_valid":
                                     row.extend(df[FUNCTIONS].values[0].tolist())
