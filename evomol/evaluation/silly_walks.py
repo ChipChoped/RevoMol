@@ -27,10 +27,13 @@ SOFTWARE.
 import json
 import os
 
+from overrides.typing_utils import unknown
 from rdkit import RDLogger
 from rdkit.Chem import rdmolfiles, AllChem
 
+from evomol.evaluation import UnknownECFP
 from evomol.evaluation.evaluation import Function
+from evomol.evaluation.unknown_ecfp import list_ecfp
 from evomol.representation import Molecule
 
 def silly_walks(molecule: Molecule, radius: int=2) -> float:
@@ -45,22 +48,10 @@ def silly_walks(molecule: Molecule, radius: int=2) -> float:
         float: Sillywalk score
     """
     if molecule:
-        # Suppress further warnings from rdkit
-        # A fix will be made to permanently remove the warning
-        RDLogger.DisableLog('rdApp.warning')
-
-        molecule = rdmolfiles.MolFromSmiles(molecule.id_representation.smiles)
-        fp = AllChem.GetMorganFingerprint(molecule, radius=radius)
-        on_bits = fp.GetNonzeroElements().keys()
-
-        with open(os.path.join("external_data", "complete_ChEMBL_ZINC_union_ecfp4_dict.json"), "r") as f:
-            ecfp4_dict: list[str] = json.load(f)
-
-        silly_bits: list = [x for x in [ecfp4_dict.get(str(x)) for x in on_bits] if x is None]
-        score: float = len(silly_bits) / len(on_bits) if len(on_bits) > 0 else 0
+        unknown_ecfp: UnknownECFP = UnknownECFP()
+        return unknown_ecfp.evaluate(molecule) / len(list_ecfp(molecule))
     else:
-        score = 1
+        return 1
 
-    return score
 
 Silly_Walks = Function("Silly_Walks", silly_walks)
