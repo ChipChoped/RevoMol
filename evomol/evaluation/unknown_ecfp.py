@@ -38,7 +38,7 @@ def list_ecfp(molecule: Molecule, radius: int = 2) -> list[int]:
         .GetNonzeroElements()
         .keys()
     )
-    print(fingerprints)
+    
     return fingerprints
 
 
