@@ -51,7 +51,7 @@ class UnknownECFP(Evaluation):
 
     def __init__(
         self,
-        path_db: str = os.path.join("external_data", "ecfp4_ChEMBL.txt"),
+        path_db: str = os.path.join("external_data", "ecfp4_ChEMBL_ZINC.txt"),
         radius: int = 2,
         name: str = "chembl",
     ):
