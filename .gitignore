@@ -115,8 +115,11 @@ notebooks/
 results/
 output/
 plots/
+tmp/
 
 slurm/
 bash/
 
 /*.zip
+
+scripts/test.py
