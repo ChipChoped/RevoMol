@@ -33,7 +33,7 @@ if __name__ == "__main__":
     FUNCTIONS = [
         "QED",
         "SAScore",
-        "logP",
+        "LogP",
         "PLogP",
         "Silly_Walks"
     ]

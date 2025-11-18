@@ -28,7 +28,7 @@ if __name__ == "__main__":
     FUNCTIONS = [
         "QED",
         "SAScore",
-        "logP",
+        "LogP",
         "PLogP",
         # "Silly_Walks"
     ]
@@ -45,19 +45,15 @@ if __name__ == "__main__":
         MOLECULES = pd.read_csv("./results/random_walk/random_molecules_summary.csv")
         MOLECULES = MOLECULES[MOLECULES["mode"] == "not_all_valid"]["final_molecule"]
 
-        print(MOLECULES.size)
-
         for mode in MODES:
             mol_count = 0
             error_count = 0
+            key_error_count = 0
+            file_error_count = 0
+
             for start_molecule in MOLECULES:
                 for action_space in ACTION_SPACES:
                     for evaluation_function in FUNCTIONS:
-                        if evaluation_function == "logP":
-                            evaluation_function_ == "LogP"
-                        else:
-                            evaluation_function_ = evaluation_function
-
                         if not (start_molecule == "C" and action_space in ["ChangeBondMG", "SoftChangeBondMG"]):
                             try:
                                 df = pd.read_csv(f"{PATH}/{mode}/{start_molecule}/"
@@ -78,10 +74,25 @@ if __name__ == "__main__":
                                 writer.writerow(row)
 
                                 mol_count += 1
-                            except Exception as e:
+                            except FileNotFoundError as e:
                                 print(f"Could not process: {mode}/{start_molecule}/{action_space}/{evaluation_function}")
-                                print(e, "\n")
+                                # print(e, "\n")
+                                try:
+                                    print(pd.read_csv(f"{PATH}/{mode}/{start_molecule}/{action_space}"
+                                                      f"/{evaluation_function}/walk.csv"), "\n")
+                                except Exception as e:
+                                    print(e, "\n")
 
                                 error_count += 1
+                                file_error_count += 1
+                            except KeyError as e:
+                                print(f"Could not process: {mode}/{start_molecule}/{action_space}/{evaluation_function}")
+                                # print(e, "\n")
+
+                                print(pd.read_csv(f"{PATH}/{mode}/{start_molecule}/{action_space}"
+                                                  f"/{evaluation_function}/local_optimum.csv").columns, "\n")
+
+                                error_count += 1
+                                key_error_count += 1
 
     print(mol_count, error_count)
