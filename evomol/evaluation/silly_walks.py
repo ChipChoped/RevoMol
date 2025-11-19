@@ -24,12 +24,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
-import json
-import os
-
-from overrides.typing_utils import unknown
-from rdkit import RDLogger
-from rdkit.Chem import rdmolfiles, AllChem
 
 from evomol.evaluation import UnknownECFP
 from evomol.evaluation.evaluation import Function
