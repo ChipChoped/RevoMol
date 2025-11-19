@@ -123,6 +123,9 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, only_valid:
                 (fitness_function in [SAScore, LogP, PLogP, Silly_Walks] and neighbor_fitness <= best_fitness):
                 best_fitness = neighbor_fitness
                 best_neighbor = neighbor
+            if (fitness_function.name == "QED" and neighbor_fitness > best_fitness) or \
+                (fitness_function.name in ["SAScore", "LogP", "PLogP", "Silly_Walks"]
+                 and neighbor_fitness < best_fitness):
 
         return best_neighbor[0], best_neighbor[1], best_fitness, len(neighborhood)
 
