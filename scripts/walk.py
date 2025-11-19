@@ -1,6 +1,9 @@
 import csv
+import multiprocessing
 import random
 import time
+from multiprocessing import Pool, Value, Array, Lock, Process
+from multiprocessing.sharedctypes import Synchronized
 from typing import cast
 
 from evomol import default_parameters as dp
@@ -66,6 +69,20 @@ def get_random_neighbor(start_smiles: str, only_valid: bool = True) -> tuple[str
         return chosen_smiles, chosen_action, len(neighborhood)
 
 
+def find_highest_fitness(lock: Lock, neighbors_indexes: list[int], neighborhood: list[tuple[str, Action]],  # type: ignore
+                         fitness_function: Function, best_index: Synchronized, best_fitness: Synchronized) -> None:
+    dp.setup_default_parameters()
+
+    for index in neighbors_indexes:
+        neighbor_fitness = fitness_function.evaluate(Molecule(neighborhood[index][0]))
+
+        if neighbor_fitness > best_fitness.value:
+            lock.acquire()
+            best_index.value = index
+            best_fitness.value = neighbor_fitness
+            lock.release()
+
+
 def get_best_neighbor(start_smiles: str, fitness_function: Function, only_valid: bool = True)\
     -> tuple[str, Action | None, float, int]:
     """
@@ -87,14 +104,14 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, only_valid:
     )
 
     possible_smiles, possible_actions = en.find_neighbors(Molecule(can_smi_start), max_depth=1, info=True)
-    neighborhood: set[tuple[str, Action]] = {(Molecule(smiles).get_representation(MolecularGraph).canonical_smiles,
-                                              action) for smiles, action in zip(possible_smiles, possible_actions)}
+    neighborhood: list[tuple[str, Action]] = [(Molecule(smiles).get_representation(MolecularGraph).canonical_smiles,
+                                              action) for smiles, action in zip(possible_smiles, possible_actions)]
 
     if only_valid:
         evaluations = dp.setup_filters("chembl_zinc")
 
-        valid_smiles: set[tuple[str, Action]] = {neighbor for neighbor in neighborhood
-                                              if evaluator.is_valid_molecule(Molecule(neighbor[0]), evaluations)}
+        valid_smiles: list[tuple[str, Action]] = [neighbor for neighbor in neighborhood
+                                                  if evaluator.is_valid_molecule(Molecule(neighbor[0]), evaluations)]
 
         neighborhood = valid_smiles
 
@@ -109,25 +126,50 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, only_valid:
         start_fitness = fitness_function.evaluate(start_mol)
 
         best_neighbor: tuple[str, Action | None] = ("", None)
-        best_fitness: float = start_fitness
 
-        for neighbor in neighborhood:
-            neighbor_mol = Molecule(neighbor[0])
+        if fitness_function.name == "Silly_Walks":
+            best_index: Synchronized = Value("i", -1)
+            best_fitness: Synchronized = Value("f", start_fitness)
+            lock: Lock = Lock()  # type: ignore
 
-            if fitness_function.name == "PLogP":
-                set_plogp_values(neighbor_mol)
+            max_processes = 4
+            processes: list[Process] = []
 
-            neighbor_fitness = fitness_function.evaluate(neighbor_mol)
+            for n_process in range(max_processes):
+                if n_process == max_processes - 1:
+                    neighbors_indexes = range(len(neighborhood) // max_processes * (max_processes - 1),
+                                              len(neighborhood))
+                else:
+                    neighbors_indexes = range(len(neighborhood) // max_processes * n_process,
+                                              len(neighborhood) // max_processes * (n_process + 1))
 
-            if (fitness_function in [QED] and neighbor_fitness >= best_fitness) or \
-                (fitness_function in [SAScore, LogP, PLogP, Silly_Walks] and neighbor_fitness <= best_fitness):
-                best_fitness = neighbor_fitness
-                best_neighbor = neighbor
-            if (fitness_function.name == "QED" and neighbor_fitness > best_fitness) or \
-                (fitness_function.name in ["SAScore", "LogP", "PLogP", "Silly_Walks"]
-                 and neighbor_fitness < best_fitness):
+                process = Process(target=find_highest_fitness, args=(lock, neighbors_indexes, neighborhood, fitness_function,
+                                                           best_index, best_fitness))
+                process.start()
+                processes.append(process)
 
-        return best_neighbor[0], best_neighbor[1], best_fitness, len(neighborhood)
+            for process in processes:
+                process.join()
+
+            return (neighborhood[best_index.value][0], neighborhood[best_index.value][1],
+                    best_fitness.value, len(neighborhood))
+        else:
+            best_fitness: float = start_fitness
+            for neighbor in neighborhood:
+                neighbor_mol = Molecule(neighbor[0])
+
+                if fitness_function.name == "PLogP":
+                    set_plogp_values(neighbor_mol)
+
+                neighbor_fitness = fitness_function.evaluate(neighbor_mol)
+
+                if (fitness_function.name == "QED" and neighbor_fitness > best_fitness) or \
+                    (fitness_function.name in ["SAScore", "LogP", "PLogP", "Silly_Walks"]
+                     and neighbor_fitness < best_fitness):
+                    best_fitness = neighbor_fitness
+                    best_neighbor = neighbor
+
+            return best_neighbor[0], best_neighbor[1], best_fitness, len(neighborhood)
 
 
 def walk(start_smiles: str, n_steps: int, action_space: list[Action],
@@ -166,6 +208,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
     start_mol: Molecule = Molecule(start_smiles)
 
     start_time: float = time.time()
+
     print("----------Step 0----------")
     print("Molecule:", start_smiles)
 
