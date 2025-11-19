@@ -74,6 +74,9 @@ def find_highest_fitness(lock: Lock, neighbors_indexes: list[int], neighborhood:
     dp.setup_default_parameters()
 
     for index in neighbors_indexes:
+        if best_index.value != -1:
+            break
+
         neighbor_fitness = fitness_function.evaluate(Molecule(neighborhood[index][0]))
 
         if neighbor_fitness > best_fitness.value:
@@ -81,6 +84,7 @@ def find_highest_fitness(lock: Lock, neighbors_indexes: list[int], neighborhood:
             best_index.value = index
             best_fitness.value = neighbor_fitness
             lock.release()
+            break
 
 
 def get_best_neighbor(start_smiles: str, fitness_function: Function, only_valid: bool = True)\
