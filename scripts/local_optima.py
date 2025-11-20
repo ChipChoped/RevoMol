@@ -1,6 +1,9 @@
 import argparse
+import multiprocessing
 import os
 import sys
+from multiprocessing import Process
+
 from tqdm import tqdm
 
 import pandas as pd
@@ -20,7 +23,7 @@ from evomol.evaluation.sa_score import SAScore
 from evomol.evaluation.logp import LogP
 from evomol.evaluation.plogp import PLogP
 from evomol.evaluation.silly_walks import Silly_Walks
-from scripts.fitness_landscape_analysis import correlations
+from scripts.correlations import correlations
 
 
 if __name__ == "__main__":
@@ -56,10 +59,11 @@ if __name__ == "__main__":
         path_actions = arguments.actions
 
     molecules : DataFrame = pd.read_csv(arguments.input_file)
-    molecules = molecules[molecules["mode"] == "not_all_valid"]
+    # molecules = molecules[molecules["mode"] == "not_all_valid"]
 
-    for (index, row), tqdm in zip(molecules.iterrows(),
-                                tqdm(range(len(molecules)), desc="Processing molecules", total=len(molecules))):
+    processes: list[Process] = []
+
+    for index, row in molecules.iterrows():
         smiles: str = row["final_molecule"]
 
         path = ("./results/adaptive_walk/" + only_valid_str + smiles + "/"
@@ -72,10 +76,16 @@ if __name__ == "__main__":
 
         os.makedirs(path, exist_ok=True)
 
-        correlations(smiles, arguments.max_steps, action_space,
-                     [QED, SAScore, LogP, PLogP, Silly_Walks],
-                     [Tanimoto, Levenshtein, GED, NormalizedGED],
-                     strategy="adaptive", evaluation_function=evaluation_function,
-                     only_valid=arguments.only_valid, path=path, soft_change_bond=arguments.soft_change_bond)
+        process = Process(target=correlations, args=(smiles, arguments.max_steps, action_space,
+                     [QED, SAScore, LogP, PLogP, Silly_Walks], [Tanimoto, Levenshtein, GED, NormalizedGED],
+                     "adaptive", evaluation_function, arguments.only_valid, path, arguments.soft_change_bond))
+
+        process.start()
+        processes.append(process)
 
         print()
+
+    for process in processes:
+        process.join()
+
+    print("done")
