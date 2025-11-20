@@ -30,7 +30,7 @@ from evomol.evaluation.evaluation import Function
 from evomol.evaluation.unknown_ecfp import list_ecfp
 from evomol.representation import Molecule
 
-def silly_walks(molecule: Molecule, radius: int=2) -> float:
+def silly_walks(molecule: Molecule) -> float:
     """
     Calculate the silliness of a molecule (its non-realism)
 
