@@ -133,7 +133,7 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, only_valid:
 
         if fitness_function.name == "Silly_Walks":
             best_index: Synchronized = Value("i", -1)
-            best_fitness: Synchronized = Value("f", start_fitness)
+            best_fitness: Synchronized = Value("d", start_fitness)
             lock: Lock = Lock()  # type: ignore
 
             max_processes = 4
