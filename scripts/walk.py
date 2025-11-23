@@ -265,7 +265,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
         # At each step a random candidate of the molecule neighbor is chosen
         # Its validity and all its fitnesses are computed and saved
         for step, _ in zip(range(n_steps),
-                           tqdm(range(n_steps),desc=f"{strategy} walk "
+                           tqdm(range(n_steps),desc=f"{init_smiles} {strategy} walk "
                                                     f"{[action.class_name() for action in action_space]} "
                                                     f"{evaluation_function.name} -b {soft_change_bond}")):
             # Get a random neighbor
