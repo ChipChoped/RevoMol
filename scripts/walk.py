@@ -81,7 +81,6 @@ def find_highest_fitness(lock: Lock, neighbors_indexes: list[int], neighborhood:
         lock.acquire()
 
         if neighbor_fitness < best_fitness.value:
-            print(neighbor_fitness, best_fitness.value)
             best_index.value = index
             best_fitness.value = neighbor_fitness
 
