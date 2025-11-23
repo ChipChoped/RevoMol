@@ -141,7 +141,7 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, only_valid:
 
             for n_process in range(max_processes):
                 if n_process == max_processes - 1:
-                    neighbors_indexes = range(len(neighborhood) // max_processes * (max_processes - 1),
+                    neighbors_indexes = range(len(neighborhood) // max_processes * max_processes,
                                               len(neighborhood))
                 else:
                     neighbors_indexes = range(len(neighborhood) // max_processes * n_process,

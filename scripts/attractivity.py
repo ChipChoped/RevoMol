@@ -112,15 +112,17 @@ if __name__ == "__main__":
     processes: list[Process] = []
     lock: Lock = Lock()
 
+    print("Number of CPUs available:", max_processes)
+
     for n_process in range(max_processes):
         if n_process == max_processes - 1:
-            row_stack_indexes = range(local_optima_df.shape[0] // max_processes * (max_processes - 1),
+            row_stack_indexes = range(local_optima_df.shape[0] // max_processes * max_processes,
                                       local_optima_df.shape[0])
         else:
             row_stack_indexes = range(local_optima_df.shape[0] // max_processes * n_process,
                                       local_optima_df.shape[0] // max_processes * (n_process + 1))
 
-        print(row_stack_indexes, max_processes, local_optima_df.shape[0])
+        print(len(list(row_stack_indexes)))
 
         process: Process = Process(target=attractivity, args=(lock, local_optima_df.iloc[list(row_stack_indexes)],
                                                               arguments.steps, path + str(steps) + ".csv", n_process))
