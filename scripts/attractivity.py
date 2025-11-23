@@ -34,7 +34,7 @@ def attractivity(lock: Lock, local_optima: DataFrame, steps: int, file_path: str
     dp.setup_default_parameters()
 
     for (index, row), _ in zip(local_optima.iterrows(),
-                               tqdm(range(len(local_optima.values)), desc="Process n°" + process_id,
+                               tqdm(range(len(local_optima.values)), desc="Process n°" + str(process_id),
                                     total=len(local_optima.values))):
         local_optimum: str = row["local_optimum"]
         action_space_str: str = row["action_space"]
