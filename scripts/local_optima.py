@@ -1,6 +1,7 @@
 import argparse
 import multiprocessing
 import os
+import random
 import sys
 from multiprocessing import Process
 
@@ -28,6 +29,8 @@ from scripts.correlations import correlations
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("strategy", type=str, choices=("best_improv", "first_improv"),
+                        help="The type of walk to perform")
     parser.add_argument("input_file", type=str,
                         help="Path to the input file containing starting molecules",)
     parser.add_argument("-a", required=True, type=str, help="Actions to perform (space separated)",
@@ -41,10 +44,13 @@ if __name__ == "__main__":
                         default=1000)
     parser.add_argument("-o", "--only-valid", action="store_true",
                         help="If set, only valid molecules will be kept during the walk", dest="only_valid")
+    parser.add_argument("-s", "--seed", type=int, help="Random seed to use", dest="seed", default=0)
     parser.add_argument("-b", "--soft-change-bond", action="store_true",
                         help="If set, bond breaking and formation won't be allowed", dest="soft_change_bond")
 
     arguments = parser.parse_args()
+
+    random.seed(arguments.seed)
 
     action_space: list[Action] = [eval("mg." + action) for action in arguments.actions]
     evaluation_function: Function = eval(arguments.evaluation_function)
@@ -58,6 +64,11 @@ if __name__ == "__main__":
     else:
         path_actions = arguments.actions
 
+    if arguments.strategy == "first_improv":
+        seed: str = str(arguments.seed) + "/"
+    else:
+        seed: str = ""
+
     molecules : DataFrame = pd.read_csv(arguments.input_file)
     # molecules = molecules[molecules["mode"] == "not_all_valid"]
 
@@ -66,9 +77,9 @@ if __name__ == "__main__":
     for index, row in molecules.iterrows():
         smiles: str = row["final_molecule"]
 
-        path = ("./results/adaptive_walk/" + only_valid_str + smiles + "/"
+        path = ("./results/" + arguments.strategy + "/" + only_valid_str + smiles + "/"
                 + str(path_actions).replace("', '", "_").replace("['", "")
-                .replace("']", "") + "/"+ arguments.evaluation_function + "/")
+                .replace("']", "") + "/" + arguments.evaluation_function + "/" + seed)
 
         print()
         print(path)
@@ -78,7 +89,7 @@ if __name__ == "__main__":
 
         process = Process(target=correlations, args=(smiles, arguments.max_steps, action_space,
                      [QED, SAScore, LogP, PLogP, Silly_Walks], [Tanimoto, Levenshtein, GED, NormalizedGED],
-                     "adaptive", evaluation_function, arguments.only_valid, path, arguments.soft_change_bond))
+                     arguments.strategy, evaluation_function, arguments.only_valid, path, arguments.soft_change_bond))
 
         process.start()
         processes.append(process)
