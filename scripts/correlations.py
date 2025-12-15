@@ -214,11 +214,11 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[Action],
 
 
 def main() -> None:
-    """Compute the fitness correlation between molecules found during a random walk"""
+    """Compute the fitness correlation between molecules found during a walk"""
     parser: ArgumentParser = argparse.ArgumentParser()
 
-    parser.add_argument("strategy", type=str, choices=("random", "adaptive"),
-                        help="The type of walk to perform (random or adaptive)")
+    parser.add_argument("strategy", type=str, choices=("random", "best_improv", "first_improv"),
+                        help="The type of walk to perform")
     parser.add_argument("smiles", type=str, help="SMILES of a molecule")
     parser.add_argument("n_steps", type=int, help="Number of steps to perform")
     parser.add_argument("-a", required=True, type=str, help="Actions to perform (space separated)",
@@ -252,11 +252,13 @@ def main() -> None:
     evaluation_function_str: str = ""
     seed_str: str = ""
 
-    if arguments.strategy == "adaptive" and evaluation_function is None:
+    if arguments.strategy in ["best_improv", "first_improv"] and evaluation_function is None:
         print("Error: An evaluation function must be provided for adaptive walks")
         exit(1)
-    elif arguments.strategy == "adaptive" and evaluation_function is not None:
+    elif arguments.strategy == "best_improv" and evaluation_function is not None:
         evaluation_function_str: str = arguments.evaluation_function + "/"
+    elif arguments.strategy == "fist_improv" and evaluation_function is not None:
+        evaluation_function_str: str = arguments.evaluation_function + "/" + str(arguments.seed) + "/"
     elif arguments.strategy == "random":
         evaluation_function_str = str(arguments.seed) + "/"
 

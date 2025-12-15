@@ -87,7 +87,7 @@ def find_highest_fitness(lock: Lock, neighbors_indexes: list[int], neighborhood:
         lock.release()
 
 
-def get_best_neighbor(start_smiles: str, fitness_function: Function, only_valid: bool = True)\
+def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: str, only_valid: bool = True)\
     -> tuple[str, Action | None, float, int]:
     """
     Get the neighbor with the highest fitness equal or higher than the starting molecule.
@@ -95,6 +95,7 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, only_valid:
     Arg:
         start_smiles (str): The smiles of the starting molecule
         fitness_function (Function): The fitness function to evaluate neighbors
+        strategy (str): The strategy used to evaluate neighbors (best-improv, first-improv)
         only_valid (bool): If true, only valid smiles will be considered.
 
     Return:
@@ -121,7 +122,7 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, only_valid:
 
     if len(neighborhood) == 0:
         return "", None, 0, 0
-    else:
+    elif strategy == "best_improv":
         start_mol = Molecule(start_smiles)
 
         if fitness_function.name == "PLogP":
@@ -147,8 +148,9 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, only_valid:
                     neighbors_indexes = range(len(neighborhood) // max_processes * n_process,
                                               len(neighborhood) // max_processes * (n_process + 1))
 
-                process = Process(target=find_highest_fitness, args=(lock, neighbors_indexes, neighborhood, fitness_function,
-                                                           best_index, best_fitness))
+                process = Process(target=find_highest_fitness,
+                                  args=(lock, neighbors_indexes, neighborhood, fitness_function,
+                                        best_index, best_fitness))
                 process.start()
                 processes.append(process)
 
@@ -177,6 +179,38 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, only_valid:
                     best_neighbor = neighbor
 
             return best_neighbor[0], best_neighbor[1], best_fitness, len(neighborhood)
+    elif strategy == "first_improv":
+        start_mol = Molecule(start_smiles)
+
+        # Shuffle the neighborhood to get different results by changing the seed
+        random.shuffle(neighborhood)
+
+        if fitness_function.name == "PLogP":
+            set_plogp_values(start_mol)
+
+        start_fitness = fitness_function.evaluate(start_mol)
+        best_neighbor: tuple[str, Action | None] = ("", None)
+        best_fitness: float = start_fitness
+
+        for neighbor in neighborhood:
+            neighbor_mol = Molecule(neighbor[0])
+
+            if fitness_function.name == "PLogP":
+                set_plogp_values(neighbor_mol)
+
+            neighbor_fitness = fitness_function.evaluate(neighbor_mol)
+
+            if (fitness_function.name == "QED" and neighbor_fitness > best_fitness) or \
+                (fitness_function.name in ["SAScore", "LogP", "PLogP", "Silly_Walks"]
+                 and neighbor_fitness < best_fitness):
+                best_fitness = neighbor_fitness
+                best_neighbor = neighbor
+
+                break
+
+        return best_neighbor[0], best_neighbor[1], best_fitness, len(neighborhood)
+    else:
+        raise ValueError(f"Unknown adaptive walk method: {strategy}")
 
 
 def walk(start_smiles: str, n_steps: int, action_space: list[Action],
@@ -225,7 +259,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
 
     fitnesses: dict[str, list[float]] = dict()  # All fitnesses of molecules encountered
 
-    if strategy == "adaptive":
+    if strategy in ["best_improv", "first_improv"]:
         # Evaluation needed for the PlogP calculation
         if evaluation_function.name == "PLogP":
             set_plogp_values(start_mol)
@@ -281,9 +315,11 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
                 print("----------Step " + str(step + 1) + "----------")
             # Get the best neighbor according to the evaluation function
             # and stops the walk if no better neighbor is found
-            elif strategy == "adaptive":
-                neighbor, action, neighbor_fitness, neighborhood_size = get_best_neighbor(start_smiles, evaluation_function,
-                                                                                  only_valid)
+            elif strategy in ["best_improv", "first_improv"]:
+                neighbor, action, neighbor_fitness, neighborhood_size = get_best_neighbor(start_smiles,
+                                                                                          evaluation_function,
+                                                                                          strategy,
+                                                                                          only_valid)
 
                 csv_row.append(str(neighborhood_size))
                 writer.writerow(csv_row)
