@@ -75,11 +75,12 @@ def set_of_neighbors(molecule: Molecule, info: bool = False) -> set[Molecule] | 
         }
 
 
-def list_of_neighbors(molecule: Molecule) -> list[Molecule]:
+def list_of_neighbors(molecule: Molecule, info: bool=False) -> list[Molecule] | list[tuple[Molecule, Action]]:
     """List the neighbors of a molecule and compute them.
 
     Args:
         molecule (Molecule): Molecule to explore
+        info (bool): Whether to return the action applied along with the molecule
 
     Returns:
         list[Molecule]: list of molecules found
@@ -88,6 +89,13 @@ def list_of_neighbors(molecule: Molecule) -> list[Molecule]:
     molecule.compute_possible_actions()
     # for each representation, for each action list, for each action, apply it
     # and return the list of new molecules
+    if info:
+        return [
+            (action.apply(), action)
+            for representation in molecule.possible_actions.values()
+            for action_list in representation.values()
+            for action in action_list
+        ]
     return [
         action.apply()
         for representation in molecule.possible_actions.values()
@@ -243,7 +251,7 @@ def find_neighbors(molecule: Molecule, max_depth: int, info: bool = False) -> tu
             next_queue = set()
             # for each molecule in the queue, find the neighbors
             for current_mol in queue:
-                for new_mol, action in set_of_neighbors(current_mol, info):
+                for new_mol, action in list_of_neighbors(current_mol, info):
                     new_smi = str(new_mol)
                     # add the new molecule to the set of neighbors if it is not
                     # already in it, don't add it if it is already in the set
