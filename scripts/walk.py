@@ -289,7 +289,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
     evaluations: list[Evaluation] = dp.setup_filters("chembl_zinc")
     start_mol: Molecule = Molecule(start_smiles)
 
-    start_time: float = time.time()
+    runtime: float = 0
 
     print("----------Step 0----------")
     print("Molecule:", start_smiles)
@@ -354,8 +354,11 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
                 csv_row.append(str(neighborhood_size))
                 writer.writerow(csv_row)
 
+                end_time = time.time() - start_time
+                runtime += end_time
+
                 print("Neighborhood size:", neighborhood_size)
-                print("Time:", time.time() - start_time)
+                print("Time:", end_time)
                 print()
                 print("----------Step " + str(step + 1) + "----------")
             # Get the best neighbor according to the evaluation function
@@ -368,8 +371,11 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
                 csv_row.append(str(neighborhood_size))
                 writer.writerow(csv_row)
 
+                end_time = time.time() - start_time
+                runtime += end_time
+
                 print("Neighborhood size:", neighborhood_size)
-                print("Time:", time.time() - start_time)
+                print("Time:", end_time)
                 print()
                 print("----------Step " + str(step + 1) + "----------")
 
@@ -458,14 +464,12 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
             else:
                 writer.writerow(["No local optimum found in " + str(n_steps) + " steps."])
 
-    end_time: float = time.time()
-
     with open(path + "running_time.csv", "w", newline='') as file:
         writer = csv.writer(file)
         writer.writerow(["time"])
-        writer.writerow([end_time - start_time])
+        writer.writerow([runtime])
 
-        print("\n Running time (s):", end_time - start_time)
+        print("\n Running time (s):", runtime)
 
 
     return molecules, are_valid, fitnesses
