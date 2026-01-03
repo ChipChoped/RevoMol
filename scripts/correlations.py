@@ -121,8 +121,8 @@ def delta_fitness_distance_correlation(all_fitnesses: dict[str, list[float]], di
 def correlations(start_smiles: str, n_steps: int, action_space: list[Action],
                  fitness_functions: list[Function], distance_functions: list[Distance],
                  strategy: str = "random", evaluation_function: Function = None,
-                 only_valid: bool = True, path: str = "results", soft_change_bond: bool = False) -> float:
                  only_valid: bool = True, path: str = "results", soft_change_bond: bool = False,
+                 depth: int = 1) -> float:
     """
     Compute the fitnesses correlations and the distances-fitnesses correlations between a starting molecule
     and molecules encountered during a random walk.
