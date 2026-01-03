@@ -71,7 +71,7 @@ def delta_fitness_distance_correlation(all_fitnesses: dict[str, list[float]], di
         list[tuple[str, str]]: The sampled molecule pairs
     """
     with open(path + "/samples.csv", "a", newline='') as file:
-        writer = csv.writer(file)
+        writer = csv.writer(file, lineterminator='\n')
 
         csv_row: list[str] = ["smiles_1", "smiles_2"]
         csv_row.extend(all_fitnesses.keys())
@@ -138,6 +138,7 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[Action],
         only_valid (bool): If True, only valid molecules will be kept during the random walk (True by default)
         path (str): The path to the directory where results are stored
         soft_change_bond (bool): If True, bond breaking and formation won't be allowed (False by default)
+        depth (int): The depth of the search
 
     Return:
         list[float]: A list of fitnesses correlation
@@ -158,7 +159,7 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[Action],
 
     if len(molecules) > 2:
         with open(path + "fitness_auto_correlations.csv", "a", newline='') as file:
-            writer = csv.writer(file)
+            writer = csv.writer(file, lineterminator='\n')
 
             row = ["lag"]
             row.extend(all_fitnesses.keys())
@@ -181,7 +182,7 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[Action],
 
         print()
         with open(path + "delta_fitness_distance_correlations.csv", "a", newline='') as file:
-            writer = csv.writer(file)
+            writer = csv.writer(file, lineterminator='\n')
             writer.writerow(["fitness_function", "distance_function", "correlation_coefficient"])
 
             sample_size = min(100, len(molecules))
@@ -204,11 +205,11 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[Action],
         print("Not enough molecules were generated to compute correlations.")
 
         with open(path + "fitness_auto_correlations.csv", "a", newline='') as file:
-            writer = csv.writer(file)
+            writer = csv.writer(file, lineterminator='\n')
             writer.writerow("Not enough molecules were generated to compute the auto-correlations.")
 
         with open(path + "delta_fitness_distance_correlations.csv", "a", newline='') as file:
-            writer = csv.writer(file)
+            writer = csv.writer(file, lineterminator='\n')
             writer.writerow("Not enough molecules were generated to compute the delta-fitness-distance correlations.")
 
     return 0

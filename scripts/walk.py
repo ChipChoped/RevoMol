@@ -34,12 +34,14 @@ def set_plogp_values(mol: Molecule) -> None:
     mol.set_value("zinc_normalized_cycle_score", NormalizedCycleScore.evaluate(mol))
 
 
+def get_random_neighbor(start_smiles: str, only_valid: bool = True, depth: int = 1) -> tuple[str, Action | None, int]:
     """
     Get a random neighbor for a molecule without looking if it is realistic.
 
     Arg:
         start_smiles (str): The smiles of the starting molecule
         only_valid (bool): If true, only valid smiles will be returned.
+        depth (int): The depth of the search
 
     Return:
         str: A random neighbor of the molecule
@@ -311,7 +313,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
         plateaus: list[tuple[float, list[int]]] = []
 
     with open(path + "walk.csv", "a", newline='') as file:
-        writer = csv.writer(file)
+        writer = csv.writer(file, lineterminator='\n')
 
         csv_row = ["smiles", "is_valid"]
         csv_row.extend([function.name for function in fitness_functions])
@@ -389,7 +391,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
                         plateaus.append((start_fitness, plateau))
 
                         with open(path + "plateaus.csv", "w", newline='') as plateau_file:
-                            plateau_writer = csv.writer(plateau_file)
+                            plateau_writer = csv.writer(plateau_file, lineterminator='\n')
                             row = ["step", "smiles", "start_smiles", "evaluation_function"]
                             row.extend([function.name for function in fitness_functions])
                             plateau_writer.writerow(row)
@@ -449,7 +451,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
 
     if strategy == "adaptive":
         with open(path + "local_optimum.csv", "w", newline='') as file:
-            writer = csv.writer(file)
+            writer = csv.writer(file, lineterminator='\n')
 
             if len(molecules) - 1 != n_steps:
                 row = ["smiles", "start_smiles", "is_valid", "steps_taken", "evaluation_function"]
@@ -465,7 +467,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
                 writer.writerow(["No local optimum found in " + str(n_steps) + " steps."])
 
     with open(path + "running_time.csv", "w", newline='') as file:
-        writer = csv.writer(file)
+        writer = csv.writer(file, lineterminator='\n')
         writer.writerow(["time"])
         writer.writerow([runtime])
 
