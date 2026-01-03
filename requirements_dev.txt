@@ -1,4 +1,4 @@
-rdkit==2025.9.1
+rdkit==2025.9.3
 networkx>=3.2
 typing_extensions>=4.12
 typer>=0.12
@@ -26,3 +26,4 @@ flake8
 isort
 pytest
 furo
+plottable
