@@ -123,3 +123,5 @@ bash/
 /*.zip
 
 scripts/test.py
+scripts/get_local_optima.py
+scripts/get_random_molecules.py
