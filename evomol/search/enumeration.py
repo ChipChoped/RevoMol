@@ -233,7 +233,7 @@ def find_neighbors(molecule: Molecule, max_depth: int, info: bool = False) -> tu
         info (bool): Whether to return the actions applied along with the molecules
 
     Returns:
-        set[str]: set of molecules found
+         tuple[list[str], list[Action]] | set[str]: List or set of molecules found
     """
     # queue of molecules to explore
     queue: set[Molecule] = {molecule}
