@@ -122,6 +122,7 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[Action],
                  fitness_functions: list[Function], distance_functions: list[Distance],
                  strategy: str = "random", evaluation_function: Function = None,
                  only_valid: bool = True, path: str = "results", soft_change_bond: bool = False) -> float:
+                 only_valid: bool = True, path: str = "results", soft_change_bond: bool = False,
     """
     Compute the fitnesses correlations and the distances-fitnesses correlations between a starting molecule
     and molecules encountered during a random walk.
@@ -151,7 +152,7 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[Action],
                                                walk(start_smiles, n_steps, action_space, fitness_functions,
                                                     strategy=strategy, evaluation_function=evaluation_function,
                                                     only_valid=only_valid, path=path,
-                                                    soft_change_bond=soft_change_bond))
+                                                    soft_change_bond=soft_change_bond, depth=depth))
 
     print("\n---Correlation coefficient(s)---\n")
 
@@ -233,6 +234,7 @@ def main() -> None:
     parser.add_argument("-s", "--seed", type=int, help="Random seed to use", dest="seed", default=0)
     parser.add_argument("-b", "--soft-change-bond", action="store_true",
                         help="If set, bond breaking and formation won't be allowed", dest="soft_change_bond")
+    parser.add_argument("-d", "--depth", type=int, help="Depth of the search", dest="depth", default=1)
 
     arguments: argparse.Namespace = parser.parse_args()
 
@@ -271,8 +273,8 @@ def main() -> None:
     else:
         path_actions = arguments.actions
 
-    path = ("./results/" + arguments.strategy + "_walk/" + only_valid_str + "/" + str(arguments.n_steps) + "/"
-            + arguments.smiles + "/" + str(path_actions).replace("', '", "_")
+    path = ("./results/" + arguments.strategy + "_walk/" + only_valid_str + "/" + str(arguments.n_steps) + "/" +
+            str(arguments.depth) + "/" + arguments.smiles + "/" + str(path_actions).replace("', '", "_")
             .replace("['", "").replace("']", "") + "/" + evaluation_function_str)
 
     print()

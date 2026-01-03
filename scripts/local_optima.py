@@ -47,6 +47,7 @@ if __name__ == "__main__":
     parser.add_argument("-s", "--seed", type=int, help="Random seed to use", dest="seed", default=0)
     parser.add_argument("-b", "--soft-change-bond", action="store_true",
                         help="If set, bond breaking and formation won't be allowed", dest="soft_change_bond")
+    parser.add_argument("-d", "--depth", type=int, help="Depth of the search", dest="depth", default=1)
 
     arguments = parser.parse_args()
 
@@ -77,7 +78,7 @@ if __name__ == "__main__":
     for index, row in molecules.iterrows():
         smiles: str = row["final_molecule"]
 
-        path = ("./results/" + arguments.strategy + "_walk/" + only_valid_str + smiles + "/"
+        path = ("./tests/" + arguments.strategy + "_walk/" + only_valid_str + "/" + str(arguments.depth) + "/" + smiles + "/"
                 + str(path_actions).replace("', '", "_").replace("['", "")
                 .replace("']", "") + "/" + arguments.evaluation_function + "/" + seed)
 
@@ -89,7 +90,8 @@ if __name__ == "__main__":
 
         process = Process(target=correlations, args=(smiles, arguments.max_steps, action_space,
                      [QED, SAScore, LogP, PLogP, Silly_Walks], [Tanimoto, Levenshtein, GED, NormalizedGED],
-                     arguments.strategy, evaluation_function, arguments.only_valid, path, arguments.soft_change_bond))
+                     arguments.strategy, evaluation_function, arguments.only_valid, path, arguments.soft_change_bond,
+                     arguments.depth))
 
         process.start()
         processes.append(process)
