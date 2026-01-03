@@ -56,7 +56,7 @@ if __name__ == "__main__":
     action_space: list[Action] = [eval("mg." + action) for action in arguments.actions]
     evaluation_function: Function = eval(arguments.evaluation_function)
 
-    only_valid_str: str = "only_valid/" if parser.parse_args().only_valid else "not_all_valid/"
+    only_valid_str: str = "only_valid" if parser.parse_args().only_valid else "not_all_valid"
 
     if arguments.soft_change_bond and "ChangeBondMG" in arguments.actions:
         path_actions = arguments.actions.copy()
