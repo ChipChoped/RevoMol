@@ -78,7 +78,7 @@ if __name__ == "__main__":
     for index, row in molecules.iterrows():
         smiles: str = row["final_molecule"]
 
-        path = ("./tests/" + arguments.strategy + "_walk/" + only_valid_str + "/" + str(arguments.depth) + "/" + smiles + "/"
+        path = ("./results/" + arguments.strategy + "_walk/" + only_valid_str + "/" + str(arguments.depth) + "/" + smiles + "/"
                 + str(path_actions).replace("', '", "_").replace("['", "")
                 .replace("']", "") + "/" + arguments.evaluation_function + "/" + seed)
 
