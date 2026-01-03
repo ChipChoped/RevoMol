@@ -3,23 +3,34 @@ import csv
 
 import pandas as pd
 
+from evomol import default_parameters as dp
+
 from evomol.distance.ged import GED, NormalizedGED
 from evomol.distance.levenshtein import Levenshtein
 from evomol.distance.tanimoto import Tanimoto
 
+from evomol.evaluation import QED, SAScore, LogP, PLogP
+from evomol.evaluation.silly_walks import Silly_Walks
+from evomol.representation import Molecule
+from scripts.walk import set_plogp_values
+
 if __name__ == "__main__":
-    MODES = ["not_all_valid", "only_valid"]
+    MODES = ["not_all_valid"]
     STEPS = 1000
-    SEEDS = [1, 2, 3, 4, 5]
+    SEEDS = [1]
     PATH = "./results/random_walk"
 
     MOLECULES = [
-        "C",  # Methane
-        "C(O)(=O)C1=C(OC(C)=O)C=CC=C1",  # Aspirin
-        "CN1C(=NC2=C1C(=O)N(C(=O)N2C)C)CO",  # Caffeine
-        "C(C(=O)O)C(CC(=O)O)(C(=O)O)O",  # Citric acid
-        "S1C=CSC1=C2SC=CS2",  # TTF
-        "C1CN2C(=NN=C2C(F)(F)F)CN1C(=O)C[C@@H](CC3=CC(=C(C=C3F)F)F)N"  # Sitagliptin
+        'C1=C2C1NC13CN2C1=N3',
+        'CC12OC1C2=C1NN1',
+        'C=CC12C3C4=NC31C42',
+        'O=C1C(O)=CC12C=NO2',
+        'OC1=C2N1NN(O)N2F',
+        'C#CC(N)C(=C)C(N)N',
+        'C1=NC=NC1C1=C2CN21',
+        'N=C(O)N(N)N1C2=C1N2',
+        'C1=C2NON=C3N(N1)N23',
+        'NC(O)C1=C2C=C(C1)N2',
     ]
 
     ACTION_SPACES = [
@@ -47,6 +58,20 @@ if __name__ == "__main__":
         row.extend(FUNCTIONS)
 
         writer.writerow(row)
+
+        dp.setup_default_parameters()
+
+        # for smiles in MOLECULES:
+        #     molecule = Molecule(smiles)
+        #
+        #     row = ["OD9", None, None, None, None, smiles, Silly_Walks.evaluate(molecule) == 0]
+        #     row.extend([None] * 4)
+        #
+        #     set_plogp_values(molecule)
+        #
+        #     for function in [QED, SAScore, LogP, PLogP, Silly_Walks]:
+        #         row.append(function.evaluate(molecule))
+        #     writer.writerow(row)
 
         for mode in MODES:
             for start_molecule in MOLECULES:

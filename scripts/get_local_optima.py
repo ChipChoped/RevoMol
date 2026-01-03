@@ -30,10 +30,10 @@ if __name__ == "__main__":
         "SAScore",
         "LogP",
         "PLogP",
-        # "Silly_Walks"
+        "Silly_Walks"
     ]
 
-    with open(os.path.join(PATH, "local_optima_summary.csv"), "w") as f:
+    with open(os.path.join(PATH, "local_optima_sample_summary.csv"), "w") as f:
         writer = csv.writer(f, lineterminator='\n')
 
         row = ["mode", "steps_taken", "action_space", "random_molecule", "local_optimum", "is_valid",
@@ -42,8 +42,8 @@ if __name__ == "__main__":
 
         writer.writerow(row)
 
-        MOLECULES = pd.read_csv("./results/random_walk/random_molecules_summary.csv")
-        MOLECULES = MOLECULES[MOLECULES["mode"] == "not_all_valid"]["final_molecule"]
+        MOLECULES = pd.read_csv("./results/random_walk/random_molecules_sample.csv")
+        MOLECULES = MOLECULES["final_molecule"]
 
         for mode in MODES:
             mol_count = 0
@@ -57,7 +57,7 @@ if __name__ == "__main__":
                         if not (start_molecule == "C" and action_space in ["ChangeBondMG", "SoftChangeBondMG"]):
                             try:
                                 df = pd.read_csv(f"{PATH}/{mode}/{start_molecule}/"
-                                                 f"{action_space}/{evaluation_function_}/local_optimum.csv")
+                                                 f"{action_space}/{evaluation_function}/local_optimum.csv")
 
                                 row = [mode, df["steps_taken"].values[0], action_space, start_molecule,
                                        df["smiles"].values[0], df["is_valid"].values[0], evaluation_function]
@@ -87,7 +87,7 @@ if __name__ == "__main__":
                                 file_error_count += 1
                             except KeyError as e:
                                 print(f"Could not process: {mode}/{start_molecule}/{action_space}/{evaluation_function}")
-                                # print(e, "\n")
+                                print(e, "\n")
 
                                 print(pd.read_csv(f"{PATH}/{mode}/{start_molecule}/{action_space}"
                                                   f"/{evaluation_function}/local_optimum.csv").columns, "\n")
