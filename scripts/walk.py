@@ -253,8 +253,6 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
             best_improvement: tuple[str, list[Action] | None, float, int] = ("", None, 0, len(root_neighborhood))
             neighborhood_size: int = 0
 
-            print(root_neighborhood[0])
-
             for i in range(len(root_neighborhood)):
                 for _ in range(1, depth):
                     neighborhood = get_deep_neighborhood([root_neighborhood[i]])
