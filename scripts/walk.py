@@ -1,5 +1,4 @@
 import csv
-import multiprocessing
 import random
 import time
 from multiprocessing import Pool, Value, Array, Lock, Process
@@ -33,6 +32,22 @@ def set_plogp_values(mol: Molecule) -> None:
     mol.set_value("zinc_normalized_cycle_score", NormalizedCycleScore.evaluate(mol))
 
 
+def get_deep_neighborhood(neighborhood: list[tuple[str, list[Action]]]) -> list[tuple[str, list[Action]]]:
+    depth_smiles: list[str] = []
+    depth_actions: list[list[Action]] = []
+
+    for possible_neighbor in neighborhood:
+        depth_neighborhood: Tuple[list[str], list[Action]] = en.find_neighbors(
+            Molecule(Molecule(possible_neighbor[0]).get_representation(MolecularGraph).canonical_smiles),
+            max_depth=1, info=True)
+
+        depth_smiles.extend(depth_neighborhood[0])
+        depth_actions.extend([possible_neighbor[1] + [depth_neighbor] for depth_neighbor in depth_neighborhood[1]])
+
+    return [(Molecule(smiles).get_representation(MolecularGraph).canonical_smiles,
+                                          action) for smiles, action in zip(depth_smiles, depth_actions)]
+
+
 def get_random_neighbor(start_smiles: str, only_valid: bool = True, depth: int = 1) -> tuple[str, Action | None, int]:
     """
     Get a random neighbor for a molecule without looking if it is realistic.
@@ -57,19 +72,7 @@ def get_random_neighbor(start_smiles: str, only_valid: bool = True, depth: int =
                                                     for smiles, action in zip(possible_smiles, possible_actions)]
 
     for _ in range(1, depth):
-        depth_smiles: list[str] = []
-        depth_actions: list[list[Action]] = []
-
-        for possible_neighbor in neighborhood:
-            depth_neighborhood: Tuple[list[str], list[Action]] = en.find_neighbors(
-                Molecule(Molecule(possible_neighbor[0]).get_representation(MolecularGraph).canonical_smiles),
-                max_depth=1, info=True)
-
-            depth_smiles.extend(depth_neighborhood[0])
-            depth_actions.extend([possible_neighbor[1] + [depth_neighbor] for depth_neighbor in depth_neighborhood[1]])
-
-        neighborhood = [(Molecule(smiles).get_representation(MolecularGraph).canonical_smiles,
-                                              action) for smiles, action in zip(depth_smiles, depth_actions)]
+        neighborhood = get_deep_neighborhood(neighborhood)
 
     if only_valid:
         valid_smiles: list[tuple[str, list[Action]]] = [neighbor for neighbor in neighborhood
@@ -111,6 +114,34 @@ def find_highest_fitness(lock: Lock, neighbors_indexes: list[int], neighborhood:
         lock.release()
 
 
+def find_first_improvement(neighborhood: list[tuple[str, list[Action]]], start_mol: Molecule,
+                           fitness_function: Function) -> tuple[str, list[Action] | None, float, int]:
+    if fitness_function.name == "PLogP":
+        set_plogp_values(start_mol)
+
+    start_fitness = fitness_function.evaluate(start_mol)
+    best_neighbor: tuple[str, list[Action] | None] = ("", None)
+    best_fitness: float = start_fitness
+
+    for neighbor in neighborhood:
+        neighbor_mol = Molecule(neighbor[0])
+
+        if fitness_function.name == "PLogP":
+            set_plogp_values(neighbor_mol)
+
+        neighbor_fitness = fitness_function.evaluate(neighbor_mol)
+
+        if (fitness_function.name == "QED" and neighbor_fitness > best_fitness) or \
+            (fitness_function.name in ["SAScore", "LogP", "PLogP", "Silly_Walks"]
+             and neighbor_fitness < best_fitness):
+            best_fitness = neighbor_fitness
+            best_neighbor = neighbor
+
+            break
+
+    return best_neighbor[0], best_neighbor[1], best_fitness, len(neighborhood)
+
+
 def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: str, only_valid: bool = True,
                       depth: int = 1, seed: int = 0) -> tuple[str, None, int, int] | tuple[
     str | list[Action] | tuple[str, list[Action]], str | list[Action] | tuple[str, list[Action]], Any, int] | tuple[
@@ -125,6 +156,7 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
         strategy (str): The strategy used to evaluate neighbors (best-improv, first-improv)
         only_valid (bool): If true, only valid smiles will be considered.
         depth (int): Depth of the search
+        seed (int): Seed for first improvement shuffle
 
     Return:
         str: The best neighbor of the molecule
@@ -140,30 +172,18 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
                                                      .canonical_smiles, [action])
                                                     for smiles, action in zip(possible_smiles, possible_actions)]
 
-    for _ in range(1, depth):
-        depth_smiles: list[str] = []
-        depth_actions: list[list[Action]] = []
-
-        for possible_neighbor in neighborhood:
-            depth_neighborhood: Tuple[list[str], list[Action]] = en.find_neighbors(
-                Molecule(Molecule(possible_neighbor[0]).get_representation(MolecularGraph).canonical_smiles),
-                max_depth=1, info=True)
-
-            depth_smiles.extend(depth_neighborhood[0])
-            depth_actions.extend([possible_neighbor[1] + [depth_neighbor] for depth_neighbor in depth_neighborhood[1]])
-
-        neighborhood = [(Molecule(smiles).get_representation(MolecularGraph).canonical_smiles,
-                                              action) for smiles, action in zip(depth_smiles, depth_actions)]
-
-    if only_valid:
-        valid_smiles: list[tuple[str, list[Action]]] = [neighbor for neighbor in neighborhood
-                                                        if evaluator.is_valid_molecule(Molecule(neighbor[0]),
-                                                                                       dp.setup_filters("chembl_zinc"))]
-        neighborhood = valid_smiles
-
     if len(neighborhood) == 0:
         return "", None, 0, 0
     elif strategy == "best_improv":
+        for _ in range(1, depth):
+            neighborhood = get_deep_neighborhood(neighborhood)
+
+        if only_valid:
+            valid_smiles: list[tuple[str, list[Action]]] = [neighbor for neighbor in neighborhood
+                                                            if evaluator.is_valid_molecule(Molecule(neighbor[0]),
+                                                                                           dp.setup_filters("chembl_zinc"))]
+            neighborhood = valid_smiles
+
         start_mol = Molecule(start_smiles)
 
         if fitness_function.name == "PLogP":
@@ -226,30 +246,30 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
         # Shuffle the neighborhood to get different results by changing the seed
         random.Random(seed).shuffle(neighborhood)
 
-        if fitness_function.name == "PLogP":
-            set_plogp_values(start_mol)
+        if depth == 1:
+            return find_first_improvement(neighborhood, start_mol, fitness_function)
+        elif depth > 1:
+            root_neighborhood: list[tuple[str, list[Action]]] = neighborhood
+            best_improvement: tuple[str, list[Action] | None, float, int] = ("", None, 0, len(root_neighborhood))
+            neighborhood_size: int = 0
 
-        start_fitness = fitness_function.evaluate(start_mol)
-        best_neighbor: tuple[str, list[Action] | None] = ("", None)
-        best_fitness: float = start_fitness
+            print(root_neighborhood[0])
 
-        for neighbor in neighborhood:
-            neighbor_mol = Molecule(neighbor[0])
+            for i in range(len(root_neighborhood)):
+                for _ in range(1, depth):
+                    neighborhood = get_deep_neighborhood([root_neighborhood[i]])
 
-            if fitness_function.name == "PLogP":
-                set_plogp_values(neighbor_mol)
+                print(neighborhood[0])
+                neighborhood_size += len(neighborhood)
+                best_improvement = find_first_improvement(neighborhood, start_mol, fitness_function)
 
-            neighbor_fitness = fitness_function.evaluate(neighbor_mol)
+                if best_improvement[1] is not None:
+                    return (best_improvement[0], best_improvement[1], best_improvement[2],
+                            int(neighborhood_size / (i+1) * len(root_neighborhood)))
 
-            if (fitness_function.name == "QED" and neighbor_fitness > best_fitness) or \
-                (fitness_function.name in ["SAScore", "LogP", "PLogP", "Silly_Walks"]
-                 and neighbor_fitness < best_fitness):
-                best_fitness = neighbor_fitness
-                best_neighbor = neighbor
-
-                break
-
-        return best_neighbor[0], best_neighbor[1], best_fitness, len(neighborhood)
+            return best_improvement
+        else:
+            raise ValueError("Depth cannot be less than 1")
     else:
         raise ValueError(f"Unknown adaptive walk method: {strategy}")
 
@@ -270,6 +290,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
         evaluation_function (Function): The fitness function to evaluate neighbors in adaptive walks
         only_valid (bool): If True, only valid molecules will be kept during the random walk
         path (str): The path to the directory where results are stored
+        seed (int): Seed for random operations
         soft_change_bond (bool): If True, bond breaking and formation won't be allowed (False by default)
         depth (int): Depth of the search
 
