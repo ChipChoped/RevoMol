@@ -450,7 +450,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
             csv_row.extend([[action.class_name() for action in actions], actions_context])
 
     if strategy == "adaptive":
-        with open(path + "local_optimum.csv", "w", newline='') as file:
+        with open(path + "local_optimum.csv", "a", newline='') as file:
             writer = csv.writer(file, lineterminator='\n')
 
             if len(molecules) - 1 != n_steps:
@@ -466,7 +466,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
             else:
                 writer.writerow(["No local optimum found in " + str(n_steps) + " steps."])
 
-    with open(path + "running_time.csv", "w", newline='') as file:
+    with open(path + "running_time.csv", "a", newline='') as file:
         writer = csv.writer(file, lineterminator='\n')
         writer.writerow(["time"])
         writer.writerow([runtime])
