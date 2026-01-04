@@ -88,10 +88,11 @@ if __name__ == "__main__":
 
         os.makedirs(path, exist_ok=True)
 
-        process = Process(target=correlations, args=(smiles, arguments.max_steps, action_space,
-                     [QED, SAScore, LogP, PLogP, Silly_Walks], [Tanimoto, Levenshtein, GED, NormalizedGED],
-                     arguments.strategy, evaluation_function, arguments.only_valid, path, arguments.soft_change_bond,
-                     arguments.depth))
+        process = Process(target=correlations,
+                          args=(smiles, arguments.max_steps, action_space,
+                                [QED, SAScore, LogP, PLogP, Silly_Walks], [Tanimoto, Levenshtein, GED, NormalizedGED],
+                                arguments.strategy, evaluation_function, arguments.only_valid, path, seed,
+                                arguments.soft_change_bond, arguments.depth))
 
         process.start()
         processes.append(process)

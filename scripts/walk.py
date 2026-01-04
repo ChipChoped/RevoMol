@@ -112,7 +112,7 @@ def find_highest_fitness(lock: Lock, neighbors_indexes: list[int], neighborhood:
 
 
 def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: str, only_valid: bool = True,
-                      depth: int = 1) -> tuple[str, None, int, int] | tuple[
+                      depth: int = 1, seed: int = 0) -> tuple[str, None, int, int] | tuple[
     str | list[Action] | tuple[str, list[Action]], str | list[Action] | tuple[str, list[Action]], Any, int] | tuple[
                                              str, list[Action] | None, float | Synchronized, int] | tuple[
                                              str | Action | None, str | Action | None, float | Synchronized, int]:
@@ -224,7 +224,7 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
         start_mol = Molecule(start_smiles)
 
         # Shuffle the neighborhood to get different results by changing the seed
-        random.shuffle(neighborhood)
+        random.Random(seed).shuffle(neighborhood)
 
         if fitness_function.name == "PLogP":
             set_plogp_values(start_mol)
@@ -256,7 +256,7 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
 
 def walk(start_smiles: str, n_steps: int, action_space: list[Action],
          fitness_functions: list[Function], strategy: str= "random", evaluation_function: Function = None,
-         only_valid: bool = True, path: str = "results", soft_change_bond: bool = False, depth: int = 1)\
+         only_valid: bool = True, path: str = "results", seed: int = 0, soft_change_bond: bool = False, depth: int = 1)\
     -> tuple[list[str], list[bool], dict[str, list[float]]]:
     """
     Perform an adaptive walk with a starting molecule and a set of allowed actions.
@@ -367,7 +367,8 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
             elif strategy in ["best_improv", "first_improv"]:
                 neighbor, actions, neighbor_fitness, neighborhood_size = get_best_neighbor(start_smiles,
                                                                                           evaluation_function,
-                                                                                          strategy, only_valid, depth)
+                                                                                          strategy, only_valid, depth,
+                                                                                           seed)
 
                 csv_row.append(str(neighborhood_size))
                 writer.writerow(csv_row)

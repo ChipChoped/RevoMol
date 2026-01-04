@@ -10,6 +10,8 @@ from pandas import DataFrame
 
 from tqdm import tqdm
 
+from notebooks.correlations import seed
+
 # Add the parent directory to the path to import the module evomol
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -58,15 +60,15 @@ def attractivity(lock: Lock, local_optima: DataFrame, steps: int, file_path: str
 
         print("\n\nStarting random walk from local optimum:", local_optimum)
 
-        random_walk = walk(local_optimum, steps, action_space, FUNCTIONS,
-                           strategy="random", only_valid=False, path=path_, soft_change_bond=soft_change_bond)
+        random_walk = walk(local_optimum, steps, action_space, FUNCTIONS, strategy="random", only_valid=False,
+                           path=path_, seed=seed, soft_change_bond=soft_change_bond)
 
         print("\n\nStarting adaptive walk from the last molecule of the random walk\nwith evaluation function:",
               evaluation_function.name, "and action space:", action_space_str)
 
         adaptive_walk = walk(random_walk[0][-1], steps * 25, action_space, FUNCTIONS,
-                             strategy="adaptive", only_valid=False, path=path_, soft_change_bond=soft_change_bond,
-                             evaluation_function=evaluation_function)
+                             strategy="adaptive", only_valid=False, path=path_, seed=seed,
+                             soft_change_bond=soft_change_bond, evaluation_function=evaluation_function)
 
         print("\n")
 

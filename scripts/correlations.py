@@ -121,7 +121,7 @@ def delta_fitness_distance_correlation(all_fitnesses: dict[str, list[float]], di
 def correlations(start_smiles: str, n_steps: int, action_space: list[Action],
                  fitness_functions: list[Function], distance_functions: list[Distance],
                  strategy: str = "random", evaluation_function: Function = None,
-                 only_valid: bool = True, path: str = "results", soft_change_bond: bool = False,
+                 only_valid: bool = True, path: str = "results", seed: int = 0, soft_change_bond: bool = False,
                  depth: int = 1) -> float:
     """
     Compute the fitnesses correlations and the distances-fitnesses correlations between a starting molecule
@@ -137,6 +137,7 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[Action],
         evaluation_function (Function): The fitness function to evaluate neighbors in adaptive walks
         only_valid (bool): If True, only valid molecules will be kept during the random walk (True by default)
         path (str): The path to the directory where results are stored
+        seed (int): Seed for random operations
         soft_change_bond (bool): If True, bond breaking and formation won't be allowed (False by default)
         depth (int): The depth of the search
 
@@ -152,7 +153,7 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[Action],
     molecules, are_valid, all_fitnesses = cast(tuple[list[str], list[bool], dict[str, list[float]]],
                                                walk(start_smiles, n_steps, action_space, fitness_functions,
                                                     strategy=strategy, evaluation_function=evaluation_function,
-                                                    only_valid=only_valid, path=path,
+                                                    only_valid=only_valid, path=path, seed=seed,
                                                     soft_change_bond=soft_change_bond, depth=depth))
 
     print("\n---Correlation coefficient(s)---\n")
@@ -253,7 +254,6 @@ def main() -> None:
             exit(1)
 
     evaluation_function_str: str = ""
-    seed_str: str = ""
 
     if arguments.strategy in ["best_improv", "first_improv"] and evaluation_function is None:
         print("Error: An evaluation function must be provided for adaptive walks")
@@ -287,8 +287,8 @@ def main() -> None:
     correlations(arguments.smiles, arguments.n_steps, action_space,
                  [QED, SAScore, LogP, PLogP, Silly_Walks],
                  [Tanimoto, Levenshtein, GED, NormalizedGED],
-                 strategy=arguments.strategy, evaluation_function=evaluation_function,
-                 only_valid=arguments.only_valid, path=path, soft_change_bond=arguments.soft_change_bond)
+                 strategy=arguments.strategy, evaluation_function=evaluation_function, only_valid=arguments.only_valid,
+                 path=path, seed=arguments.seed, soft_change_bond=arguments.soft_change_bond)
 
     print()
 
