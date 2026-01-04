@@ -257,7 +257,6 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
                 for _ in range(1, depth):
                     neighborhood = get_deep_neighborhood([root_neighborhood[i]])
 
-                print(neighborhood[0])
                 neighborhood_size += len(neighborhood)
                 best_improvement = find_first_improvement(neighborhood, start_mol, fitness_function)
 
