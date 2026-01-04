@@ -30,6 +30,7 @@ from .rd_filters import RDFilters as RDFilters
 from .sa_score import NormalizedSAScore as NormalizedSAScore
 from .sa_score import SAScore as SAScore
 from .sa_score import ZincNormalizedSAScore as ZincNormalizedSAScore
+from .silly_walks import Silly_Walks as Silly_Walks
 from .unknown_ecfp import FilterUnknownECFP as FilterUnknownECFP
 from .unknown_ecfp import UnknownECFP as UnknownECFP
 

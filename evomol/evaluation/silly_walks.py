@@ -25,7 +25,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
 
-from evomol.evaluation import UnknownECFP
+from evomol.evaluation.unknown_ecfp import UnknownECFP
 from evomol.evaluation.evaluation import Function
 from evomol.evaluation.unknown_ecfp import list_ecfp
 from evomol.representation import Molecule

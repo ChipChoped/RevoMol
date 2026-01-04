@@ -12,8 +12,7 @@ from evomol import default_parameters as dp
 from evomol import evaluation as evaluator
 from evomol.action import Action
 from evomol.evaluation import Function, ZincNormalizedLogP, NormalizedSAScore, CycleScore, NormalizedCycleScore, \
-    Evaluation, LogP, SAScore, QED, PLogP
-from evomol.evaluation.silly_walks import Silly_Walks
+    Evaluation, LogP, SAScore, QED, PLogP, Silly_Walks
 from evomol.representation import Molecule, MolecularGraph
 from evomol.search import enumeration as en
 from evomol.action import molecular_graph as mg
