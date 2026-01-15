@@ -467,7 +467,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
             csv_row.extend(iter([str(fitness[-1]) for fitness in fitnesses.values()]))
             csv_row.extend([[action.class_name() for action in actions], actions_context])
 
-    if strategy == "adaptive":
+    if strategy in ["best_improv", "first_improv"]:
         with open(path + "local_optimum.csv", "a", newline='') as file:
             writer = csv.writer(file, lineterminator='\n')
 
