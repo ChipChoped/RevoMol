@@ -127,3 +127,4 @@ scripts/test.py
 scripts/get_local_optima.py
 scripts/get_random_molecules.py
 scripts/draw_mol.py
+scripts/sample_molecules.py
