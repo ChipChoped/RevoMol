@@ -120,7 +120,7 @@ def delta_fitness_distance_correlation(all_fitnesses: dict[str, list[float]], di
 
 def correlations(start_smiles: str, n_steps: int, action_space: list[Action],
                  fitness_functions: list[Function], distance_functions: list[Distance],
-                 strategy: str = "random", evaluation_function: Function = None,
+                 strategy: str = "random", evaluation_function: Function = None, aggregate_realism: bool = False,
                  only_valid: bool = True, path: str = "results", seed: int = 0, soft_change_bond: bool = False,
                  depth: int = 1) -> float:
     """
@@ -135,6 +135,8 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[Action],
         distance_functions (list[Distance]): A list of distance functions
         strategy (str): The type of walk to perform ("random" or "adaptive")
         evaluation_function (Function): The fitness function to evaluate neighbors in adaptive walks
+        aggregate_realism (bool): If True, makes an aggregation between the evaluation function if used with
+        the silly walks function
         only_valid (bool): If True, only valid molecules will be kept during the random walk (True by default)
         path (str): The path to the directory where results are stored
         seed (int): Seed for random operations
@@ -153,6 +155,7 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[Action],
     molecules, are_valid, all_fitnesses = cast(tuple[list[str], list[bool], dict[str, list[float]]],
                                                walk(start_smiles, n_steps, action_space, fitness_functions,
                                                     strategy=strategy, evaluation_function=evaluation_function,
+                                                    aggregate_realism=aggregate_realism,
                                                     only_valid=only_valid, path=path, seed=seed,
                                                     soft_change_bond=soft_change_bond, depth=depth))
 
@@ -231,6 +234,9 @@ def main() -> None:
     parser.add_argument("-e", "--evaluation", type=str, choices=("QED", "SAScore", "LogP", "PLogP", "Silly_Walks"),
                         help="The evaluation function to use in adaptive walks", dest="evaluation_function",
                         default=None)
+    parser.add_argument("-r", "--aggregate-realism", action="store_true",
+                        help="If set, makes an aggregation between the evaluation function if used with the silly walks"
+                             "function")
     parser.add_argument("-o", "--only-valid", action="store_true",
                         help="If set, only valid molecules will be kept during the walk", dest="only_valid")
     parser.add_argument("-s", "--seed", type=int, help="Random seed to use", dest="seed", default=0)
@@ -253,17 +259,22 @@ def main() -> None:
             print("Error: Unknown evaluation function", arguments.evaluation_function)
             exit(1)
 
-    evaluation_function_str: str = ""
-
     if arguments.strategy in ["best_improv", "first_improv"] and evaluation_function is None:
         print("Error: An evaluation function must be provided for adaptive walks")
         exit(1)
-    elif arguments.strategy == "best_improv" and evaluation_function is not None:
-        evaluation_function_str: str = arguments.evaluation_function + "/"
-    elif arguments.strategy == "fist_improv" and evaluation_function is not None:
-        evaluation_function_str: str = arguments.evaluation_function + "/" + str(arguments.seed) + "/"
-    elif arguments.strategy == "random":
-        evaluation_function_str = str(arguments.seed) + "/"
+
+    if arguments.strategy == "random":
+        evaluation_function_str: str = str(arguments.seed) + "/"
+    else:
+        evaluation_function_str: str = arguments.evaluation_function
+
+        if arguments.aggregate_realism:
+            evaluation_function_str += "-Silly_Walks"
+
+        if arguments.strategy == "best_improv" and evaluation_function is not None:
+            evaluation_function_str += "/"
+        elif arguments.strategy == "fist_improv" and evaluation_function is not None:
+            evaluation_function_str += "/" + str(arguments.seed) + "/"
 
     only_valid_str: str = "only_valid" if parser.parse_args().only_valid else "not_all_valid"
 
@@ -287,7 +298,8 @@ def main() -> None:
     correlations(arguments.smiles, arguments.n_steps, action_space,
                  [QED, SAScore, LogP, PLogP, Silly_Walks],
                  [Tanimoto, Levenshtein, GED, NormalizedGED],
-                 strategy=arguments.strategy, evaluation_function=evaluation_function, only_valid=arguments.only_valid,
+                 strategy=arguments.strategy, evaluation_function=evaluation_function,
+                 aggregate_realism=arguments.aggregate_realism, only_valid=arguments.only_valid,
                  path=path, seed=arguments.seed, soft_change_bond=arguments.soft_change_bond)
 
     print()

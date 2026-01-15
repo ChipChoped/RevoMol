@@ -115,7 +115,8 @@ def find_highest_fitness(lock: Lock, neighbors_indexes: list[int], neighborhood:
 
 
 def find_first_improvement(neighborhood: list[tuple[str, list[Action]]], start_mol: Molecule,
-                           fitness_function: Function) -> tuple[str, list[Action] | None, float, int]:
+                           fitness_function: Function, aggregate_realism: bool = False)\
+    -> tuple[str, list[Action] | None, float, int]:
     if fitness_function.name == "PLogP":
         set_plogp_values(start_mol)
 
@@ -124,26 +125,35 @@ def find_first_improvement(neighborhood: list[tuple[str, list[Action]]], start_m
     best_fitness: float = start_fitness
 
     for neighbor in neighborhood:
-        neighbor_mol = Molecule(neighbor[0])
+        if neighbor[0] != "":
+            neighbor_mol = Molecule(neighbor[0])
 
-        if fitness_function.name == "PLogP":
-            set_plogp_values(neighbor_mol)
+            if fitness_function.name == "PLogP":
+                set_plogp_values(neighbor_mol)
 
-        neighbor_fitness = fitness_function.evaluate(neighbor_mol)
+            if aggregate_realism:
+                if fitness_function.name == "SAScore":
+                    neighbor_fitness = (fitness_function.evaluate(neighbor_mol)
+                                        * (1 + Silly_Walks.evaluate(neighbor_mol)))
+                else:
+                    neighbor_fitness = (fitness_function.evaluate(neighbor_mol)
+                                        * (1 - Silly_Walks.evaluate(neighbor_mol)))
+            else:
+                neighbor_fitness = fitness_function.evaluate(neighbor_mol)
 
-        if (fitness_function.name == "QED" and neighbor_fitness > best_fitness) or \
-            (fitness_function.name in ["SAScore", "LogP", "PLogP", "Silly_Walks"]
-             and neighbor_fitness < best_fitness):
-            best_fitness = neighbor_fitness
-            best_neighbor = neighbor
+            if (fitness_function.name == "QED" and neighbor_fitness > best_fitness) or \
+                (fitness_function.name in ["SAScore", "LogP", "PLogP", "Silly_Walks"]
+                 and neighbor_fitness < best_fitness):
+                best_fitness = neighbor_fitness
+                best_neighbor = neighbor
 
-            break
+                break
 
     return best_neighbor[0], best_neighbor[1], best_fitness, len(neighborhood)
 
 
-def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: str, only_valid: bool = True,
-                      depth: int = 1, seed: int = 0) -> tuple[str, None, int, int] | tuple[
+def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: str, aggregate_realism: bool = False,
+                      only_valid: bool = True, depth: int = 1, seed: int = 0) -> tuple[str, None, int, int] | tuple[
     str | list[Action] | tuple[str, list[Action]], str | list[Action] | tuple[str, list[Action]], Any, int] | tuple[
                                              str, list[Action] | None, float | Synchronized, int] | tuple[
                                              str | Action | None, str | Action | None, float | Synchronized, int]:
@@ -154,6 +164,8 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
         start_smiles (str): The smiles of the starting molecule
         fitness_function (Function): The fitness function to evaluate neighbors
         strategy (str): The strategy used to evaluate neighbors (best-improv, first-improv)
+        aggregate_realism (bool): If True, makes an aggregation between the evaluation function if used with
+        the silly walks function
         only_valid (bool): If true, only valid smiles will be considered.
         depth (int): Depth of the search
         seed (int): Seed for first improvement shuffle
@@ -189,7 +201,10 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
         if fitness_function.name == "PLogP":
             set_plogp_values(start_mol)
 
-        start_fitness = fitness_function.evaluate(start_mol)
+        if aggregate_realism:
+            start_fitness = fitness_function.evaluate(start_mol) * (1 - Silly_Walks.evaluate(start_mol))
+        else:
+            start_fitness = fitness_function.evaluate(start_mol)
 
         best_neighbor: tuple[str, list[Action] | None] = ("", None)
 
@@ -226,18 +241,27 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
         else:
             best_fitness: float = start_fitness
             for neighbor in neighborhood:
-                neighbor_mol = Molecule(neighbor[0])
+                if neighbor[0] != "":
+                    neighbor_mol = Molecule(neighbor[0])
 
-                if fitness_function.name == "PLogP":
-                    set_plogp_values(neighbor_mol)
+                    if fitness_function.name == "PLogP":
+                        set_plogp_values(neighbor_mol)
 
-                neighbor_fitness = fitness_function.evaluate(neighbor_mol)
+                    if aggregate_realism:
+                        if fitness_function.name == "SAScore":
+                            neighbor_fitness = (fitness_function.evaluate(neighbor_mol)
+                                               * (1 + Silly_Walks.evaluate(neighbor_mol)))
+                        else:
+                            neighbor_fitness = (fitness_function.evaluate(neighbor_mol)
+                                               * (1 - Silly_Walks.evaluate(neighbor_mol)))
+                    else:
+                        neighbor_fitness = fitness_function.evaluate(neighbor_mol)
 
-                if (fitness_function.name == "QED" and neighbor_fitness > best_fitness) or \
-                    (fitness_function.name in ["SAScore", "LogP", "PLogP", "Silly_Walks"]
-                     and neighbor_fitness < best_fitness):
-                    best_fitness = neighbor_fitness
-                    best_neighbor = neighbor
+                    if (fitness_function.name == "QED" and neighbor_fitness > best_fitness) or \
+                        (fitness_function.name in ["SAScore", "LogP", "PLogP", "Silly_Walks"]
+                         and neighbor_fitness < best_fitness):
+                        best_fitness = neighbor_fitness
+                        best_neighbor = neighbor
 
             return best_neighbor[0], best_neighbor[1], best_fitness, len(neighborhood)
     elif strategy == "first_improv":
@@ -247,7 +271,7 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
         random.Random(seed).shuffle(neighborhood)
 
         if depth == 1:
-            return find_first_improvement(neighborhood, start_mol, fitness_function)
+            return find_first_improvement(neighborhood, start_mol, fitness_function, aggregate_realism)
         elif depth > 1:
             root_neighborhood: list[tuple[str, list[Action]]] = neighborhood
             best_improvement: tuple[str, list[Action] | None, float, int] = ("", None, 0, len(root_neighborhood))
@@ -258,7 +282,7 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
                     neighborhood = get_deep_neighborhood([root_neighborhood[i]])
 
                 neighborhood_size += len(neighborhood)
-                best_improvement = find_first_improvement(neighborhood, start_mol, fitness_function)
+                best_improvement = find_first_improvement(neighborhood, start_mol, fitness_function, aggregate_realism)
 
                 if best_improvement[1] is not None:
                     return (best_improvement[0], best_improvement[1], best_improvement[2],
@@ -273,10 +297,10 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
 
 def walk(start_smiles: str, n_steps: int, action_space: list[Action],
          fitness_functions: list[Function], strategy: str= "random", evaluation_function: Function = None,
-         only_valid: bool = True, path: str = "results", seed: int = 0, soft_change_bond: bool = False, depth: int = 1)\
-    -> tuple[list[str], list[bool], dict[str, list[float]]]:
+         aggregate_realism: bool = False, only_valid: bool = True, path: str = "results", seed: int = 0,
+         soft_change_bond: bool = False, depth: int = 1) -> tuple[list[str], list[bool], dict[str, list[float]]]:
     """
-    Perform an adaptive walk with a starting molecule and a set of allowed actions.
+    Perform a random or adaptive walk with based on a starting molecule and a set of allowed actions.
 
     Args:
         start_smiles (str): The smiles of the starting molecule
@@ -285,6 +309,8 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
         fitness_functions (list[Function]): A list of fitness functions
         strategy (str): The type of walk to perform ("random" or "adaptive")
         evaluation_function (Function): The fitness function to evaluate neighbors in adaptive walks
+        aggregate_realism (bool): If True, makes an aggregation between the evaluation function if used with
+        the silly walks function
         only_valid (bool): If True, only valid molecules will be kept during the random walk
         path (str): The path to the directory where results are stored
         seed (int): Seed for random operations
@@ -335,6 +361,9 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
         csv_row = ["smiles", "is_valid"]
         csv_row.extend([function.name for function in fitness_functions])
 
+        if aggregate_realism:
+            csv_row.append(evaluation_function.name + "-Silly_Walks")
+
         if depth == 1:
             csv_row.extend(["action", "action_context", "neighborhood_size"])
         else:
@@ -353,10 +382,17 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
             fitnesses[function_name] = [fitness]
             start_mol.set_value(function_name, fitness)
 
-            print(function_name, ": ", fitnesses[function_name][0])
+            print(function_name, ":", fitnesses[function_name][0])
 
         csv_row = [start_smiles, are_valid[-1]]
         csv_row.extend(iter([str(fitness[-1]) for fitness in fitnesses.values()]))
+
+        if aggregate_realism:
+            aggregation: float = fitnesses[evaluation_function.name][0] * (1 - fitnesses["Silly_Walks"][0])
+            print(evaluation_function.name + "-Silly_Walks:", aggregation)
+
+            csv_row.append(str(aggregation))
+
         csv_row.extend(["None", "None"])
 
         init_smiles: str = start_smiles
@@ -368,7 +404,8 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
             start_time: float = time.time()
 
             if strategy == "random":
-                neighbor, actions, neighborhood_size = get_random_neighbor(start_smiles, only_valid)
+                neighbor, actions, neighborhood_size = get_random_neighbor(start_smiles=start_smiles,
+                                                                           only_valid=only_valid)
 
                 csv_row.append(str(neighborhood_size))
                 writer.writerow(csv_row)
@@ -383,10 +420,10 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
             # Get the best neighbor according to the evaluation function
             # and stops the walk if no better neighbor is found
             elif strategy in ["best_improv", "first_improv"]:
-                neighbor, actions, neighbor_fitness, neighborhood_size = get_best_neighbor(start_smiles,
-                                                                                          evaluation_function,
-                                                                                          strategy, only_valid, depth,
-                                                                                           seed)
+                neighbor, actions, neighbor_fitness, neighborhood_size =\
+                    get_best_neighbor(start_smiles=start_smiles, fitness_function=evaluation_function,
+                                      strategy=strategy, aggregate_realism=aggregate_realism, only_valid=only_valid,
+                                      depth=depth, seed=seed)
 
                 csv_row.append(str(neighborhood_size))
                 writer.writerow(csv_row)
@@ -410,8 +447,13 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
 
                         with open(path + "plateaus.csv", "w", newline='') as plateau_file:
                             plateau_writer = csv.writer(plateau_file, lineterminator='\n')
+
+                            if aggregate_realism:
+                                csv_row.append(evaluation_function.name + "-Silly_Walks")
+
                             row = ["step", "smiles", "start_smiles", "evaluation_function"]
                             row.extend([function.name for function in fitness_functions])
+
                             plateau_writer.writerow(row)
 
                             for p in plateaus:
@@ -454,6 +496,9 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
 
                 print(function_name + ":", fitnesses[fitness_function.name][-1])
 
+            if aggregate_realism:
+                print(evaluation_function.name + "-Silly_Walks:", neighbor_fitness)
+
             start_smiles = neighbor
             actions_context: list[str] = [str(cast(dict, action.__getstate__())).replace('"', "'")
                                           for action in actions]
@@ -464,6 +509,10 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
                 print(action.class_name(), action_context)
 
             csv_row = [start_smiles, are_valid[-1]]
+
+            if aggregate_realism:
+                csv_row.append(neighbor_fitness)
+
             csv_row.extend(iter([str(fitness[-1]) for fitness in fitnesses.values()]))
 
             if depth == 1:
