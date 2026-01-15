@@ -465,7 +465,11 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
 
             csv_row = [start_smiles, are_valid[-1]]
             csv_row.extend(iter([str(fitness[-1]) for fitness in fitnesses.values()]))
-            csv_row.extend([[action.class_name() for action in actions], actions_context])
+
+            if depth == 1:
+                csv_row.extend([actions[0].class_name(), actions_context[0]])
+            else:
+                csv_row.extend([[action.class_name() for action in actions], actions_context])
 
     if strategy in ["best_improv", "first_improv"]:
         with open(path + "local_optimum.csv", "a", newline='') as file:
