@@ -300,7 +300,7 @@ def main() -> None:
                  [Tanimoto, Levenshtein, GED, NormalizedGED],
                  strategy=arguments.strategy, evaluation_function=evaluation_function,
                  aggregate_realism=arguments.aggregate_realism, only_valid=arguments.only_valid,
-                 path=path, seed=arguments.seed, soft_change_bond=arguments.soft_change_bond)
+                 path=path, seed=arguments.seed, soft_change_bond=arguments.soft_change_bond, depth=arguments.depth)
 
     print()
 
