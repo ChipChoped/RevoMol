@@ -370,6 +370,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
             csv_row.extend(["actions", "actions_context", "neighborhood_size"])
 
         writer.writerow(csv_row)
+        csv_row = [start_smiles, are_valid[-1]]
 
         for fitness_function, i in zip(fitness_functions, range(len(fitness_functions))):
             # Evaluation needed for the PlogP calculation
@@ -383,9 +384,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
             start_mol.set_value(function_name, fitness)
 
             print(function_name, ":", fitnesses[function_name][0])
-
-        csv_row = [start_smiles, are_valid[-1]]
-        csv_row.extend(iter([str(fitness[-1]) for fitness in fitnesses.values()]))
+            csv_row.append(str(fitnesses[function_name][0]))
 
         if aggregate_realism:
             aggregation: float = fitnesses[evaluation_function.name][0] * (1 - fitnesses["Silly_Walks"][0])
@@ -472,7 +471,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
                         plateaus.append((start_fitness, plateau))
                         plateau = [step]
             else:
-                raise ValueError("Strategy must be 'random' or 'adaptive'!")
+                raise ValueError("Strategy must be 'random', 'best_improv' or 'first_improv'!")
 
             if neighbor == "":
                 neighbor = init_smiles
@@ -483,21 +482,6 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
             molecules.append(neighbor)
             are_valid.append(evaluator.is_valid_molecule(neighbor_mol, evaluations))
             print("Is valid:", (are_valid[-1]))
-
-            for fitness_function, i in zip(fitness_functions, range(len(fitness_functions))):
-                function_name = fitness_function.name
-
-                if fitness_function.name == "PLogP":
-                    set_plogp_values(neighbor_mol)
-
-                fitness = fitness_function.evaluate(neighbor_mol)
-                fitnesses[function_name].append(fitness)
-                neighbor_mol.set_value(function_name, fitness)
-
-                print(function_name + ":", fitnesses[fitness_function.name][-1])
-
-            if aggregate_realism:
-                print(evaluation_function.name + "-Silly_Walks:", neighbor_fitness)
 
             start_smiles = neighbor
             actions_context: list[str] = [str(cast(dict, action.__getstate__())).replace('"', "'")
@@ -510,10 +494,23 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
 
             csv_row = [start_smiles, are_valid[-1]]
 
-            if aggregate_realism:
-                csv_row.append(neighbor_fitness)
+            for fitness_function, i in zip(fitness_functions, range(len(fitness_functions))):
+                function_name = fitness_function.name
 
-            csv_row.extend(iter([str(fitness[-1]) for fitness in fitnesses.values()]))
+                if fitness_function.name == "PLogP":
+                    set_plogp_values(neighbor_mol)
+
+                fitness = fitness_function.evaluate(neighbor_mol)
+                fitnesses[function_name].append(fitness)
+                neighbor_mol.set_value(function_name, fitness)
+
+                print(function_name + ":", fitnesses[fitness_function.name][-1])
+                csv_row.append(fitnesses[fitness_function.name][-1])
+
+            if aggregate_realism:
+                aggregation = neighbor_fitness
+                print(evaluation_function.name + "-Silly_Walks:", aggregation)
+                csv_row.append(aggregation)
 
             if depth == 1:
                 csv_row.extend([actions[0].class_name(), actions_context[0]])
@@ -531,7 +528,12 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
                 writer.writerow(row)
 
                 row = [start_smiles, molecules[0], are_valid[-1], len(molecules) - 1, evaluation_function.name]
-                row.extend([str(fitness[-1]) for fitness in fitnesses.values()])
+
+                for fitness in fitness_functions:
+                    row.append(str(fitnesses[fitness.name][-1]))
+
+                if aggregate_realism:
+                    row.append(aggregation)
 
                 writer.writerow(row)
             else:
