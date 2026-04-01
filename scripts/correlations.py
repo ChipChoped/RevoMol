@@ -269,7 +269,7 @@ def main() -> None:
         evaluation_function_str: str = arguments.evaluation_function
 
         if arguments.aggregate_realism:
-            evaluation_function_str += "-Silly_Walks"
+            evaluation_function_str += "-Silly_Walks/"
 
         if arguments.strategy == "best_improv" and evaluation_function is not None:
             evaluation_function_str += "/"
