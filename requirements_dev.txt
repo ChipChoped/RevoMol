@@ -27,3 +27,4 @@ isort
 pytest
 furo
 plottable
+seaborn
