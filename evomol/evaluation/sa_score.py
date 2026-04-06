@@ -76,7 +76,7 @@ def zinc_normalized_sa_score(molecule: Molecule) -> float:
     return zinc_normalized_sa_score_value
 
 
-SAScore = Function("SAScore", sa_score)
+SAScore = Function("SAScore", sa_score, -0.1)
 
 
 NormalizedSAScore = Function("NormalizedSAScore", normalized_sa_score)

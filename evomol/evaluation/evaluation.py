@@ -108,9 +108,12 @@ class Function(Evaluation):
     the value of the evaluation.
     """
 
-    def __init__(self, name: str, function: Callable[[Molecule], Any]) -> None:
+    alpha: float
+
+    def __init__(self, name: str, function: Callable[[Molecule], Any], alpha: float = 1) -> None:
         super().__init__(name)
         self.function = function
+        self.alpha = alpha
 
     @override
     def _evaluate(self, molecule: Molecule) -> Any:
