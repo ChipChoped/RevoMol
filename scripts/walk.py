@@ -416,6 +416,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
             print(evaluation_function.name + "-Silly_Walks:", start_fitness)
 
             csv_row.append(str(start_fitness))
+            aggregation: float = start_fitness
 
         csv_row.extend(["None", "None"])
 
