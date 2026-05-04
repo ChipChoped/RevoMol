@@ -5,13 +5,11 @@ from multiprocessing import Pool, Value, Array, Lock, Process
 from multiprocessing.sharedctypes import Synchronized
 from typing import cast, Tuple, Any
 
-from tqdm import tqdm
-
 from evomol import default_parameters as dp
 from evomol import evaluation as evaluator
 from evomol.action import Action
 from evomol.evaluation import Function, ZincNormalizedLogP, NormalizedSAScore, CycleScore, NormalizedCycleScore, \
-    Evaluation, LogP, SAScore, QED, PLogP, Silly_Walks
+    Evaluation, LogP, SAScore, QED, PLogP, Silly_Walks, LogP_Max, PLogP_Max
 from evomol.representation import Molecule, MolecularGraph
 from evomol.search import enumeration as en
 from evomol.action import molecular_graph as mg
@@ -117,7 +115,7 @@ def find_highest_fitness(lock: Lock, neighbors_indexes: list[int], neighborhood:
 def find_first_improvement(neighborhood: list[tuple[str, list[Action]]], start_mol: Molecule,
                            fitness_function: Function, aggregate_realism: bool = False)\
     -> tuple[str, list[Action] | None, float, int]:
-    if fitness_function.name == "PLogP":
+    if "PLogP" in fitness_function.name:
         set_plogp_values(start_mol)
 
     if aggregate_realism:
@@ -133,7 +131,7 @@ def find_first_improvement(neighborhood: list[tuple[str, list[Action]]], start_m
         if neighbor[0] != "":
             neighbor_mol = Molecule(neighbor[0])
 
-            if fitness_function.name == "PLogP":
+            if "PLogP" in fitness_function.name:
                 set_plogp_values(neighbor_mol)
 
             if aggregate_realism:
@@ -155,7 +153,7 @@ def find_first_improvement(neighborhood: list[tuple[str, list[Action]]], start_m
             else:
                 neighbor_fitness = fitness_function.evaluate(neighbor_mol)
 
-                if (fitness_function.name == "QED" and neighbor_fitness > best_fitness) or \
+                if (fitness_function.name in ["QED", "LogP_Max", "PLogP_Max"] and neighbor_fitness > best_fitness) or \
                     (fitness_function.name in ["SAScore", "LogP", "PLogP", "Silly_Walks"]
                      and neighbor_fitness < best_fitness):
                     best_fitness = neighbor_fitness
@@ -212,7 +210,7 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
 
         start_mol = Molecule(start_smiles)
 
-        if fitness_function.name == "PLogP":
+        if "PLogP" in fitness_function.name:
             set_plogp_values(start_mol)
 
         if aggregate_realism:
@@ -259,7 +257,7 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
                 if neighbor[0] != "":
                     neighbor_mol = Molecule(neighbor[0])
 
-                    if fitness_function.name == "PLogP":
+                    if "PLogP" in fitness_function.name:
                         set_plogp_values(neighbor_mol)
 
                     if aggregate_realism:
@@ -279,7 +277,7 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
                     else:
                         neighbor_fitness = fitness_function.evaluate(neighbor_mol)
 
-                        if (fitness_function.name == "QED" and neighbor_fitness > best_fitness) or \
+                        if (fitness_function.name in ["QED", "LogP_Max", "PLogP_Max"] and neighbor_fitness > best_fitness) or \
                             (fitness_function.name in ["SAScore", "LogP", "PLogP", "Silly_Walks"]
                              and neighbor_fitness < best_fitness):
                             best_fitness = neighbor_fitness
@@ -369,7 +367,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
 
     if strategy in ["best_improv", "first_improv"]:
         # Evaluation needed for the PlogP calculation
-        if evaluation_function.name == "PLogP":
+        if "PLogP" in evaluation_function.name:
             set_plogp_values(start_mol)
 
         start_fitness: float = (evaluation_function.alpha * evaluation_function.evaluate(start_mol)
@@ -400,7 +398,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
             # Evaluation needed for the PlogP calculation
             function_name = fitness_function.name
 
-            if function_name == "PLogP":
+            if "PLogP" in fitness_function.name:
                 set_plogp_values(start_mol)
 
             fitness = fitness_function.evaluate(start_mol)
@@ -523,7 +521,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
             for fitness_function, i in zip(fitness_functions, range(len(fitness_functions))):
                 function_name = fitness_function.name
 
-                if fitness_function.name == "PLogP":
+                if "PLogP" in fitness_function.name:
                     set_plogp_values(neighbor_mol)
 
                 fitness = fitness_function.evaluate(neighbor_mol)

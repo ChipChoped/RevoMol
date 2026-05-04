@@ -48,3 +48,6 @@ def zinc_normalized_log_p(molecule: Molecule) -> float:
 
 LogP = Function("LogP", log_p, -0.0555)
 ZincNormalizedLogP = Function("zinc_normalized_logP", zinc_normalized_log_p)
+
+LogP_Max = Function("LogP_Max", log_p, -0.0555)
+ZincNormalizedLogP_Max = Function("zinc_normalized_logP_max", zinc_normalized_log_p)

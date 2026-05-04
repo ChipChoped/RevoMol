@@ -23,8 +23,11 @@ from .evaluation import is_valid_molecule as is_valid_molecule
 from .generic_cyclic_features import FilterUnknownGCF as FilterUnknownGCF
 from .generic_cyclic_features import UnknownGCF as UnknownGCF
 from .logp import LogP as LogP
+from .logp import LogP_Max as LogP_Max
 from .logp import ZincNormalizedLogP as ZincNormalizedLogP
+from .logp import ZincNormalizedLogP_Max as ZincNormalizedLogP_Max
 from .plogp import PLogP as PLogP
+from .plogp import PLogP_Max as PLogP_Max
 from .qed import QED as QED
 from .rd_filters import RDFilters as RDFilters
 from .sa_score import NormalizedSAScore as NormalizedSAScore

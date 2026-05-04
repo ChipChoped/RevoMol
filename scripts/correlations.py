@@ -27,8 +27,8 @@ from evomol import default_parameters as dp
 from evomol.evaluation import Function
 from evomol.evaluation.qed import QED
 from evomol.evaluation.sa_score import SAScore
-from evomol.evaluation.logp import LogP
-from evomol.evaluation.plogp import PLogP
+from evomol.evaluation.logp import LogP, LogP_Max
+from evomol.evaluation.plogp import PLogP, PLogP_Max
 from evomol.evaluation.silly_walks import Silly_Walks
 from evomol.action import Action, molecular_graph as mg
 
@@ -231,9 +231,9 @@ def main() -> None:
                         choices=("AddAtomMG", "AddGroupMG", "ChangeBondMG", "CutAtomMG", "InsertCarbonMG",
                                  "MoveGroupMG", "RemoveAtomMG", "RemoveGroupMG", "SubstituteAtomMG"),
                         dest="actions", nargs="+", default=[])
-    parser.add_argument("-e", "--evaluation", type=str, choices=("QED", "SAScore", "LogP", "PLogP", "Silly_Walks"),
-                        help="The evaluation function to use in adaptive walks", dest="evaluation_function",
-                        default=None)
+    parser.add_argument("-e", "--evaluation", type=str, default=None,
+                        choices=("QED", "SAScore", "LogP", "LogP_Max", "PLogP", "PLogP_Max", "Silly_Walks"),
+                        help="The evaluation function to use in adaptive walks", dest="evaluation_function")
     parser.add_argument("-r", "--aggregate-realism", action="store_true",
                         help="If set, makes an aggregation between the evaluation function if used with the silly walks"
                              "function")
@@ -273,7 +273,6 @@ def main() -> None:
 
         if arguments.strategy == "best_improv" and evaluation_function is not None:
             evaluation_function_str += "/"
-        elif arguments.strategy == "fist_improv" and evaluation_function is not None:
         elif arguments.strategy == "first_improv" and evaluation_function is not None:
             evaluation_function_str += "/" + str(arguments.seed) + "/"
 
