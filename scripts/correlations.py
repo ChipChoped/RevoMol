@@ -274,6 +274,7 @@ def main() -> None:
         if arguments.strategy == "best_improv" and evaluation_function is not None:
             evaluation_function_str += "/"
         elif arguments.strategy == "fist_improv" and evaluation_function is not None:
+        elif arguments.strategy == "first_improv" and evaluation_function is not None:
             evaluation_function_str += "/" + str(arguments.seed) + "/"
 
     only_valid_str: str = "only_valid" if parser.parse_args().only_valid else "not_all_valid"
