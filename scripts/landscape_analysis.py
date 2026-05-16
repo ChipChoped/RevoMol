@@ -48,14 +48,16 @@ if __name__ == "__main__":
     parser.add_argument("-b", "--soft-change-bond", action="store_true",
                         help="If set, bond breaking and formation won't be allowed", dest="soft_change_bond")
     parser.add_argument("-d", "--depth", type=int, help="Depth of the search", dest="depth", default=1)
+    parser.add_argument("--beta", type=float, help="Beta parameter for aggregated walks",
+                        dest="beta", default=1)
 
     arguments = parser.parse_args()
 
     random.seed(arguments.seed)
 
     action_space: list[Action] = [eval("mg." + action) for action in arguments.actions]
-
     only_valid_str: str = "only_valid" if parser.parse_args().only_valid else "not_all_valid"
+    beta_str: str = ""
 
     if arguments.soft_change_bond and "ChangeBondMG" in arguments.actions:
         path_actions = arguments.actions.copy()
@@ -78,6 +80,7 @@ if __name__ == "__main__":
 
             if arguments.aggregate_realism:
                 evaluation_function_str += "-Silly_Walks/"
+                beta_str = str(arguments.beta) + "/"
             else:
                 evaluation_function_str += "/"
     else:
@@ -92,7 +95,7 @@ if __name__ == "__main__":
         smiles: str = row["final_molecule"]
 
         path = ("./results/" + arguments.strategy + "_walk/" + only_valid_str + "/" + str(arguments.depth) + "/" +
-                smiles + "/" + str(path_actions).replace("', '", "_").replace("['", "")
+                beta_str + smiles + "/" + str(path_actions).replace("', '", "_").replace("['", "")
                 .replace("']", "") + "/" + evaluation_function_str + seed)
 
         print()
@@ -106,7 +109,8 @@ if __name__ == "__main__":
                                 [QED, SAScore, LogP, PLogP, Silly_Walks],
                                 [Tanimoto, Levenshtein, GED, NormalizedGED],
                                 arguments.strategy, evaluation_function, arguments.aggregate_realism,
-                                arguments.only_valid, path, seed, arguments.soft_change_bond, arguments.depth))
+                                arguments.only_valid, path, seed, arguments.soft_change_bond,
+                                arguments.depth, arguments.beta))
 
         process.start()
         processes.append(process)

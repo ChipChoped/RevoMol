@@ -122,7 +122,7 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[Action],
                  fitness_functions: list[Function], distance_functions: list[Distance],
                  strategy: str = "random", evaluation_function: Function = None, aggregate_realism: bool = False,
                  only_valid: bool = True, path: str = "results", seed: int = 0, soft_change_bond: bool = False,
-                 depth: int = 1) -> float:
+                 depth: int = 1, beta: float = 1) -> float:
     """
     Compute the fitnesses correlations and the distances-fitnesses correlations between a starting molecule
     and molecules encountered during a random walk.
@@ -142,6 +142,7 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[Action],
         seed (int): Seed for random operations
         soft_change_bond (bool): If True, bond breaking and formation won't be allowed (False by default)
         depth (int): The depth of the search
+        beta (float): The beta parameter for aggregated walks (1. by default)
 
     Return:
         list[float]: A list of fitnesses correlation
@@ -157,7 +158,7 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[Action],
                                                     strategy=strategy, evaluation_function=evaluation_function,
                                                     aggregate_realism=aggregate_realism,
                                                     only_valid=only_valid, path=path, seed=seed,
-                                                    soft_change_bond=soft_change_bond, depth=depth))
+                                                    soft_change_bond=soft_change_bond, depth=depth, beta=beta))
 
     print("\n---Correlation coefficient(s)---\n")
 
@@ -243,14 +244,16 @@ def main() -> None:
     parser.add_argument("-b", "--soft-change-bond", action="store_true",
                         help="If set, bond breaking and formation won't be allowed", dest="soft_change_bond")
     parser.add_argument("-d", "--depth", type=int, help="Depth of the search", dest="depth", default=1)
+    parser.add_argument("--beta", type=float, help="Beta parameter for aggregated walks",
+                        dest="beta", default=1)
 
     arguments: argparse.Namespace = parser.parse_args()
 
     random.seed(arguments.seed)
 
     action_space: list[Action] = [eval("mg." + action) for action in arguments.actions]
-
     evaluation_function: Function | None = None
+    beta_str: str = ""
 
     if arguments.evaluation_function is not None:
         try:
@@ -270,6 +273,7 @@ def main() -> None:
 
         if arguments.aggregate_realism:
             evaluation_function_str += "-Silly_Walks/"
+            beta_str = str(arguments.beta) + "/"
 
         if arguments.strategy == "best_improv" and evaluation_function is not None:
             evaluation_function_str += "/"
@@ -286,8 +290,9 @@ def main() -> None:
         path_actions = arguments.actions
 
     path = ("./results/" + arguments.strategy + "_walk/" + only_valid_str + "/" + str(arguments.n_steps) + "/" +
-            str(arguments.depth) + "/" + arguments.smiles + "/" + str(path_actions).replace("', '", "_")
-            .replace("['", "").replace("']", "") + "/" + evaluation_function_str)
+            str(arguments.depth) + "/" + beta_str + arguments.smiles + "/" +
+            str(path_actions).replace("', '", "_").replace("['", "").replace("']", "") +
+            "/" + evaluation_function_str)
 
     print()
     print(path)
@@ -300,7 +305,8 @@ def main() -> None:
                  [Tanimoto, Levenshtein, GED, NormalizedGED],
                  strategy=arguments.strategy, evaluation_function=evaluation_function,
                  aggregate_realism=arguments.aggregate_realism, only_valid=arguments.only_valid,
-                 path=path, seed=arguments.seed, soft_change_bond=arguments.soft_change_bond, depth=arguments.depth)
+                 path=path, seed=arguments.seed, soft_change_bond=arguments.soft_change_bond,
+                 depth=arguments.depth, beta=arguments.beta)
 
     print()
 

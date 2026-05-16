@@ -113,7 +113,7 @@ def find_highest_fitness(lock: Lock, neighbors_indexes: list[int], neighborhood:
 
 
 def find_first_improvement(neighborhood: list[tuple[str, list[Action]]], start_mol: Molecule,
-                           fitness_function: Function, aggregate_realism: bool = False)\
+                           fitness_function: Function, aggregate_realism: bool = False, beta: float = 1)\
     -> tuple[str, list[Action] | None, float, int]:
     if "PLogP" in fitness_function.name:
         set_plogp_values(start_mol)
@@ -143,7 +143,7 @@ def find_first_improvement(neighborhood: list[tuple[str, list[Action]]], start_m
                 #                         * (1 - Silly_Walks.evaluate(neighbor_mol)))
 
                 neighbor_fitness = (fitness_function.alpha * fitness_function.evaluate(neighbor_mol)
-                                    + (1 - Silly_Walks.evaluate(neighbor_mol)))
+                                    + (1 - beta * Silly_Walks.evaluate(neighbor_mol)))
 
                 if neighbor_fitness > best_fitness:
                     best_fitness = neighbor_fitness
@@ -165,7 +165,7 @@ def find_first_improvement(neighborhood: list[tuple[str, list[Action]]], start_m
 
 
 def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: str, aggregate_realism: bool = False,
-                      only_valid: bool = True, depth: int = 1, seed: int = 0) -> tuple[str, None, int, int] | tuple[
+                      only_valid: bool = True, depth: int = 1, beta: float = 1, seed: int = 0) -> tuple[str, None, int, int] | tuple[
     str | list[Action] | tuple[str, list[Action]], str | list[Action] | tuple[str, list[Action]], Any, int] | tuple[
                                              str, list[Action] | None, float | Synchronized, int] | tuple[
                                              str | Action | None, str | Action | None, float | Synchronized, int]:
@@ -180,6 +180,7 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
         the silly walks function
         only_valid (bool): If true, only valid smiles will be considered.
         depth (int): Depth of the search
+        beta (float): The beta parameter for aggregated walks (1. by default)
         seed (int): Seed for first improvement shuffle
 
     Return:
@@ -215,7 +216,7 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
 
         if aggregate_realism:
             start_fitness = (fitness_function.alpha * fitness_function.evaluate(start_mol)
-                             + (1 - Silly_Walks.evaluate(start_mol)))
+                             + (1 - beta * Silly_Walks.evaluate(start_mol)))
         else:
             start_fitness = fitness_function.evaluate(start_mol)
 
@@ -268,8 +269,10 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
                         #     neighbor_fitness = (fitness_function.evaluate(neighbor_mol)
                         #                        * (1 - Silly_Walks.evaluate(neighbor_mol)))
 
+                        # print(fitness_function.alpha, fitness_function.evaluate(neighbor_mol), beta,
+                        #       Silly_Walks.evaluate(neighbor_mol))
                         neighbor_fitness = (fitness_function.alpha * fitness_function.evaluate(neighbor_mol)
-                                            + (1 - Silly_Walks.evaluate(neighbor_mol)))
+                                            + (1 - beta * Silly_Walks.evaluate(neighbor_mol)))
 
                         if neighbor_fitness > best_fitness:
                             best_fitness = neighbor_fitness
@@ -291,7 +294,7 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
         random.Random(seed).shuffle(neighborhood)
 
         if depth == 1:
-            return find_first_improvement(neighborhood, start_mol, fitness_function, aggregate_realism)
+            return find_first_improvement(neighborhood, start_mol, fitness_function, aggregate_realism, beta)
         elif depth > 1:
             root_neighborhood: list[tuple[str, list[Action]]] = neighborhood
             best_improvement: tuple[str, list[Action] | None, float, int] = ("", None, 0, len(root_neighborhood))
@@ -302,7 +305,8 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
                     neighborhood = get_deep_neighborhood([root_neighborhood[i]])
 
                 neighborhood_size += len(neighborhood)
-                best_improvement = find_first_improvement(neighborhood, start_mol, fitness_function, aggregate_realism)
+                best_improvement = find_first_improvement(neighborhood, start_mol, fitness_function,
+                                                          aggregate_realism, beta)
 
                 if best_improvement[1] is not None:
                     return (best_improvement[0], best_improvement[1], best_improvement[2],
@@ -318,7 +322,8 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
 def walk(start_smiles: str, n_steps: int, action_space: list[Action],
          fitness_functions: list[Function], strategy: str= "random", evaluation_function: Function = None,
          aggregate_realism: bool = False, only_valid: bool = True, path: str = "results", seed: int = 0,
-         soft_change_bond: bool = False, depth: int = 1) -> tuple[list[str], list[bool], dict[str, list[float]]]:
+         soft_change_bond: bool = False, depth: int = 1, beta: float = 1)\
+    -> tuple[list[str], list[bool], dict[str, list[float]]]:
     """
     Perform a random or adaptive walk with based on a starting molecule and a set of allowed actions.
 
@@ -336,6 +341,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
         seed (int): Seed for random operations
         soft_change_bond (bool): If True, bond breaking and formation won't be allowed (False by default)
         depth (int): Depth of the search
+        beta (float): The beta parameter for aggregated walks (1. by default)
 
     Returns:
         list[str]: The path took during the random walk (list of smiles)
@@ -371,7 +377,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
             set_plogp_values(start_mol)
 
         start_fitness: float = (evaluation_function.alpha * evaluation_function.evaluate(start_mol)
-                            + (1 - Silly_Walks.evaluate(start_mol)))\
+                            + (1 - beta * Silly_Walks.evaluate(start_mol)))\
             if aggregate_realism else evaluation_function.evaluate(start_mol)
 
         plateau: list[int] = []
@@ -409,7 +415,6 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
             csv_row.append(str(fitnesses[function_name][0]))
 
         if aggregate_realism:
-                            + (1 - Silly_Walks.evaluate(start_mol)))
             print(evaluation_function.name + "-Silly_Walks:", start_fitness)
 
             csv_row.append(str(start_fitness))
@@ -445,7 +450,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
                 neighbor, actions, neighbor_fitness, neighborhood_size =\
                     get_best_neighbor(start_smiles=start_smiles, fitness_function=evaluation_function,
                                       strategy=strategy, aggregate_realism=aggregate_realism, only_valid=only_valid,
-                                      depth=depth, seed=seed)
+                                      depth=depth, beta=beta, seed=seed)
 
                 csv_row.append(str(neighborhood_size))
                 writer.writerow(csv_row)
