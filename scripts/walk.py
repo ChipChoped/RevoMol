@@ -409,7 +409,6 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
             csv_row.append(str(fitnesses[function_name][0]))
 
         if aggregate_realism:
-            start_fitness = (fitness_function.alpha * fitness_function.evaluate(start_mol)
                             + (1 - Silly_Walks.evaluate(start_mol)))
             print(evaluation_function.name + "-Silly_Walks:", start_fitness)
 
