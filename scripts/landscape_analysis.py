@@ -2,27 +2,26 @@ import argparse
 import os
 import random
 import sys
-from multiprocessing import Process
 
+# from multiprocessing import Process
 import pandas as pd
 from pandas import DataFrame
 
 # Add the parent directory to the path to import the module evomol
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from evomol.action import Action, molecular_graph as mg
+from evomol.action import Action
+from evomol.action import molecular_graph as mg
 from evomol.distance.ged import GED, NormalizedGED
 from evomol.distance.levenshtein import Levenshtein
 from evomol.distance.tanimoto import Tanimoto
 from evomol.evaluation import Function
-
-from evomol.evaluation.qed import QED
-from evomol.evaluation.sa_score import SAScore
 from evomol.evaluation.logp import LogP, LogP_Max
 from evomol.evaluation.plogp import PLogP, PLogP_Max
+from evomol.evaluation.qed import QED
+from evomol.evaluation.sa_score import SAScore
 from evomol.evaluation.silly_walks import Silly_Walks
 from scripts.correlations import correlations
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -89,9 +88,9 @@ if __name__ == "__main__":
 
     molecules : DataFrame = pd.read_csv(arguments.input_file)
 
-    processes: list[Process] = []
+    # processes: list[Process] = []
 
-    for index, row in molecules.iterrows():
+    for _, row in molecules.iterrows():
         smiles: str = row["final_molecule"]
 
         path = ("./results/" + arguments.strategy + "_walk/" + only_valid_str + "/" + str(arguments.depth) + "/" +
@@ -104,20 +103,27 @@ if __name__ == "__main__":
 
         os.makedirs(path, exist_ok=True)
 
-        process = Process(target=correlations,
-                          args=(smiles, arguments.max_steps, action_space,
+        correlations(smiles, arguments.max_steps, action_space,
                                 [QED, SAScore, LogP, PLogP, Silly_Walks],
                                 [Tanimoto, Levenshtein, GED, NormalizedGED],
                                 arguments.strategy, evaluation_function, arguments.aggregate_realism,
                                 arguments.only_valid, path, seed, arguments.soft_change_bond,
-                                arguments.depth, arguments.beta))
-
-        process.start()
-        processes.append(process)
+                                arguments.depth, arguments.beta)
 
         print()
 
-    for process in processes:
-        process.join()
-
     print("done")
+
+        # process = Process(target=correlations,
+        #                   args=(smiles, arguments.max_steps, action_space,
+        #                         [QED, SAScore, LogP, PLogP, Silly_Walks],
+        #                         [Tanimoto, Levenshtein, GED, NormalizedGED],
+        #                         arguments.strategy, evaluation_function, arguments.aggregate_realism,
+        #                         arguments.only_valid, path, seed, arguments.soft_change_bond,
+        #                         arguments.depth, arguments.beta))
+        #
+        # process.start()
+        # processes.append(process)
+
+        # for process in processes:
+        #     process.join()
