@@ -10,7 +10,6 @@ from pandas import DataFrame
 
 from tqdm import tqdm
 
-from notebooks.correlations import seed
 
 # Add the parent directory to the path to import the module evomol
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -32,7 +31,7 @@ FUNCTIONS = [
 ]
 
 
-def attractivity(lock: Lock, local_optima: DataFrame, steps: int, file_path: str, process_id) -> None:  # type: ignore
+def attractivity(lock: Lock, local_optima: DataFrame, steps: int, depth: int, aggregate_realism: bool, file_path: str, process_id) -> None:  # type: ignore
     dp.setup_default_parameters()
 
     for (index, row), _ in zip(local_optima.iterrows(),
@@ -40,8 +39,9 @@ def attractivity(lock: Lock, local_optima: DataFrame, steps: int, file_path: str
                                     total=len(local_optima.values))):
         local_optimum: str = row["local_optimum"]
         action_space_str: str = row["action_space"]
-        evaluation_function: Function = eval(row["evaluation_function"])\
-                                             if row["evaluation_function"] != "logP" else LogP
+
+        evaluation_function: Function = eval(row["evaluation_function"].split("-")[0])\
+            if aggregate_realism else row["evaluation_function"]
 
         soft_change_bond: bool = False
 
@@ -54,21 +54,25 @@ def attractivity(lock: Lock, local_optima: DataFrame, steps: int, file_path: str
         action_space = action_space.split("_")
         action_space = [eval("mg." + action) for action in action_space]
 
-        path_ = ("./tmp/random_walk/not_only_valid/" + str(steps) + "/" + local_optimum + "/" + action_space_str + "/")
+        path_ = ("./tmp/random_walk/not_only_valid/" + str(depth) + "/" + str(steps) + "/" + local_optimum + "/" + action_space_str + "/")
 
         os.makedirs(path_, exist_ok=True)
 
         print("\n\nStarting random walk from local optimum:", local_optimum)
 
         random_walk = walk(local_optimum, steps, action_space, FUNCTIONS, strategy="random", only_valid=False,
-                           path=path_, seed=seed, soft_change_bond=soft_change_bond)
+                           path=path_, soft_change_bond=soft_change_bond, depth=depth)
 
-        print("\n\nStarting adaptive walk from the last molecule of the random walk\nwith evaluation function:",
-              evaluation_function.name, "and action space:", action_space_str)
+        try:
+            print("\n\nStarting adaptive walk from the last molecule of the random walk\nwith evaluation function:",
+                  evaluation_function.name, "and action space:", action_space_str)
+        except AttributeError:
+            print(evaluation_function)
 
         adaptive_walk = walk(random_walk[0][-1], steps * 25, action_space, FUNCTIONS,
-                             strategy="adaptive", only_valid=False, path=path_, seed=seed,
-                             soft_change_bond=soft_change_bond, evaluation_function=evaluation_function)
+                             strategy="first_improv", only_valid=False, path=path_,
+                             soft_change_bond=soft_change_bond, evaluation_function=evaluation_function,
+                             aggregate_realism=aggregate_realism)
 
         print("\n")
 
@@ -82,9 +86,17 @@ def attractivity(lock: Lock, local_optima: DataFrame, steps: int, file_path: str
         with lock:
             with open(file_path, "a") as file:
                 writer = csv.writer(file, lineterminator="\n")
+
+                ### COLUMNS ARE SHIFTED TO FIT BAD LOGGING MUST BE CHANGE ON WELL FORMED DATA!
+
+                # writer.writerow([local_optimum, action_space_str, row["evaluation_function"],
+                #                  row[row["evaluation_function"]], str(steps), str(len(adaptive_walk) - 1),
+                #                  random_walk[0][-1], adaptive_walk[0][-1], str(local_optimum == adaptive_walk[0][-1])])
+
                 writer.writerow([local_optimum, action_space_str, row["evaluation_function"],
-                                 row[row["evaluation_function"]], str(steps), str(len(adaptive_walk) - 1),
-                                 random_walk[0][-1], adaptive_walk[0][-1], str(local_optimum == adaptive_walk[0][-1])])
+                                 row[FUNCTIONS[0].name], str(steps), str(len(adaptive_walk) - 1),
+                                 random_walk[0][-1], adaptive_walk[0][-1],
+                                 str(local_optimum == adaptive_walk[0][-1])])
 
 
 if __name__ == "__main__":
@@ -92,16 +104,22 @@ if __name__ == "__main__":
     parser.add_argument("input_file", type=str, help="Path to the input file containing local optima")
     parser.add_argument("steps", type=int,
                         help="Number of steps to perform to get further away from the local optima")
+    parser.add_argument("-d", "--depth", type=int, help="Depth of the search", default=1)
+    parser.add_argument("-r", "--aggregate-realism", action="store_true",
+                        help="If set, makes an aggregation between the evaluation function if used with the silly walks"
+                             "function")
 
     arguments = parser.parse_args()
 
     local_optima_df = pd.read_csv(arguments.input_file)
 
     steps: int = arguments.steps
+    depth: int = arguments.depth
+    aggregate_realism: bool = arguments.aggregate_realism
 
     dp.setup_default_parameters()
 
-    path: str = "./results/attractivity/"
+    path: str = f"./results/attractivity/{depth}/"
     os.makedirs(path, exist_ok=True)
 
     with open(path + str(steps) + ".csv", "w") as file:
@@ -121,7 +139,8 @@ if __name__ == "__main__":
 
     for n_process in range(max_processes):
         process: Process = Process(target=attractivity, args=(lock, split_rows[n_process],
-                                                              arguments.steps, path + str(steps) + ".csv", n_process))
+                                                              arguments.steps, depth, aggregate_realism,
+                                                              path + str(steps) + ".csv", n_process))
         process.start()
         processes.append(process)
 
