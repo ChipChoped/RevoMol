@@ -120,7 +120,7 @@ def find_first_improvement(neighborhood: list[tuple[str, list[Action]]], start_m
 
     if aggregate_realism:
         start_fitness = (fitness_function.alpha * fitness_function.evaluate(start_mol)
-                         + (1 - Silly_Walks.evaluate(start_mol)))
+                         + beta * (1 - Silly_Walks.evaluate(start_mol)))
     else:
         start_fitness = fitness_function.evaluate(start_mol)
 
@@ -135,15 +135,8 @@ def find_first_improvement(neighborhood: list[tuple[str, list[Action]]], start_m
                 set_plogp_values(neighbor_mol)
 
             if aggregate_realism:
-                # if fitness_function.name == "SAScore":
-                #     neighbor_fitness = (fitness_function.evaluate(neighbor_mol)
-                #                         * (1 + Silly_Walks.evaluate(neighbor_mol)))
-                # else:
-                #     neighbor_fitness = (fitness_function.evaluate(neighbor_mol)
-                #                         * (1 - Silly_Walks.evaluate(neighbor_mol)))
-
                 neighbor_fitness = (fitness_function.alpha * fitness_function.evaluate(neighbor_mol)
-                                    + (1 - beta * Silly_Walks.evaluate(neighbor_mol)))
+                                    + beta * (1 - Silly_Walks.evaluate(neighbor_mol)))
 
                 if neighbor_fitness > best_fitness:
                     best_fitness = neighbor_fitness
@@ -216,7 +209,7 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
 
         if aggregate_realism:
             start_fitness = (fitness_function.alpha * fitness_function.evaluate(start_mol)
-                             + (1 - beta * Silly_Walks.evaluate(start_mol)))
+                             + beta * (1 - Silly_Walks.evaluate(start_mol)))
         else:
             start_fitness = fitness_function.evaluate(start_mol)
 
@@ -262,17 +255,8 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
                         set_plogp_values(neighbor_mol)
 
                     if aggregate_realism:
-                        # if fitness_function.name == "SAScore":
-                        #     neighbor_fitness = (fitness_function.evaluate(neighbor_mol)
-                        #                        * (1 + Silly_Walks.evaluate(neighbor_mol)))
-                        # else:
-                        #     neighbor_fitness = (fitness_function.evaluate(neighbor_mol)
-                        #                        * (1 - Silly_Walks.evaluate(neighbor_mol)))
-
-                        # print(fitness_function.alpha, fitness_function.evaluate(neighbor_mol), beta,
-                        #       Silly_Walks.evaluate(neighbor_mol))
                         neighbor_fitness = (fitness_function.alpha * fitness_function.evaluate(neighbor_mol)
-                                            + (1 - beta * Silly_Walks.evaluate(neighbor_mol)))
+                                            + beta * (1 - Silly_Walks.evaluate(neighbor_mol)))
 
                         if neighbor_fitness > best_fitness:
                             best_fitness = neighbor_fitness
@@ -377,7 +361,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
             set_plogp_values(start_mol)
 
         start_fitness: float = (evaluation_function.alpha * evaluation_function.evaluate(start_mol)
-                            + (1 - beta * Silly_Walks.evaluate(start_mol)))\
+                            + beta * (1 - Silly_Walks.evaluate(start_mol)))\
             if aggregate_realism else evaluation_function.evaluate(start_mol)
 
         plateau: list[int] = []
