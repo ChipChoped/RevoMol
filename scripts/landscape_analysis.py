@@ -49,6 +49,8 @@ if __name__ == "__main__":
     parser.add_argument("-d", "--depth", type=int, help="Depth of the search", dest="depth", default=1)
     parser.add_argument("--beta", type=float, help="Beta parameter for aggregated walks",
                         dest="beta", default=1)
+    parser.add_argument("-w", "--roulette-wheel", action="store_true", dest="roulette_wheel",
+                        help="If set, the roulette wheel will be used to choose which action to perform",)
 
     arguments = parser.parse_args()
 
@@ -86,6 +88,11 @@ if __name__ == "__main__":
         evaluation_function = None
         evaluation_function_str: str = ""
 
+    if arguments.roulette_wheel:
+        roulette_wheel_str: str = "roulette_wheel/"
+    else:
+        roulette_wheel_str = ""
+
     molecules : DataFrame = pd.read_csv(arguments.input_file)
 
     # processes: list[Process] = []
@@ -94,7 +101,7 @@ if __name__ == "__main__":
         smiles: str = row["final_molecule"]
 
         path = ("./results/" + arguments.strategy + "_walk/" + only_valid_str + "/" + str(arguments.depth) + "/" +
-                beta_str + smiles + "/" + str(path_actions).replace("', '", "_").replace("['", "")
+                roulette_wheel_str + beta_str + smiles + "/" + str(path_actions).replace("', '", "_").replace("['", "")
                 .replace("']", "") + "/" + evaluation_function_str + seed)
 
         print()
@@ -108,7 +115,7 @@ if __name__ == "__main__":
                                 [Tanimoto, Levenshtein, GED, NormalizedGED],
                                 arguments.strategy, evaluation_function, arguments.aggregate_realism,
                                 arguments.only_valid, path, seed, arguments.soft_change_bond,
-                                arguments.depth, arguments.beta)
+                                arguments.depth, arguments.beta, arguments.roulette_wheel)
 
         print()
 

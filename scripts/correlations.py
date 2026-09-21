@@ -122,7 +122,7 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[Action],
                  fitness_functions: list[Function], distance_functions: list[Distance],
                  strategy: str = "random", evaluation_function: Function = None, aggregate_realism: bool = False,
                  only_valid: bool = True, path: str = "results", seed: int = 0, soft_change_bond: bool = False,
-                 depth: int = 1, beta: float = 1) -> float:
+                 depth: int = 1, beta: float = 1, roulette_wheel: bool = False) -> float:
     """
     Compute the fitnesses correlations and the distances-fitnesses correlations between a starting molecule
     and molecules encountered during a random walk.
@@ -143,6 +143,7 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[Action],
         soft_change_bond (bool): If True, bond breaking and formation won't be allowed (False by default)
         depth (int): The depth of the search
         beta (float): The beta parameter for aggregated walks (1. by default)
+        roulette_wheel (bool): If True, uses roulette wheel selection for action sampling (False by default)
 
     Return:
         list[float]: A list of fitnesses correlation
@@ -153,13 +154,12 @@ def correlations(start_smiles: str, n_steps: int, action_space: list[Action],
     if only_valid and Silly_Walks in fitness_functions:
         fitness_functions.remove(Silly_Walks)
 
-    molecules, are_valid, all_fitnesses = cast(tuple[list[str], list[bool], dict[str, list[float]]],
-                                               walk(start_smiles, n_steps, action_space, fitness_functions,
-                                                    strategy=strategy, evaluation_function=evaluation_function,
-                                                    aggregate_realism=aggregate_realism,
-                                                    only_valid=only_valid, path=path, seed=seed,
-                                                    soft_change_bond=soft_change_bond, depth=depth, beta=beta))
-
+    molecules, are_valid, all_fitnesses = walk(start_smiles, n_steps, action_space, fitness_functions,
+                                               strategy=strategy, evaluation_function=evaluation_function,
+                                               aggregate_realism=aggregate_realism,
+                                               only_valid=only_valid, path=path, seed=seed,
+                                               soft_change_bond=soft_change_bond, depth=depth, beta=beta,
+                                               roulette_wheel=roulette_wheel)
     print("\n---Correlation coefficient(s)---\n")
 
     if len(molecules) > 2:
@@ -246,6 +246,8 @@ def main() -> None:
     parser.add_argument("-d", "--depth", type=int, help="Depth of the search", dest="depth", default=1)
     parser.add_argument("--beta", type=float, help="Beta parameter for aggregated walks",
                         dest="beta", default=1)
+    parser.add_argument("-w", "--roulette-wheel", action="store_true", dest="roulette_wheel",
+                        help="If set, the roulette wheel will be used to choose which action to perform",)
 
     arguments: argparse.Namespace = parser.parse_args()
 
@@ -289,8 +291,13 @@ def main() -> None:
     else:
         path_actions = arguments.actions
 
+    if arguments.roulette_wheel:
+        roulette_wheel_str: str = "roulette_wheel/"
+    else:
+        roulette_wheel_str = ""
+
     path = ("./results/" + arguments.strategy + "_walk/" + only_valid_str + "/" + str(arguments.n_steps) + "/" +
-            str(arguments.depth) + "/" + beta_str + arguments.smiles + "/" +
+            str(arguments.depth) + "/" + roulette_wheel_str +beta_str + arguments.smiles + "/" +
             str(path_actions).replace("', '", "_").replace("['", "").replace("']", "") +
             "/" + evaluation_function_str)
 
@@ -306,7 +313,7 @@ def main() -> None:
                  strategy=arguments.strategy, evaluation_function=evaluation_function,
                  aggregate_realism=arguments.aggregate_realism, only_valid=arguments.only_valid,
                  path=path, seed=arguments.seed, soft_change_bond=arguments.soft_change_bond,
-                 depth=arguments.depth, beta=arguments.beta)
+                 depth=arguments.depth, beta=arguments.beta, roulette_wheel=arguments.roulette_wheel)
 
     print()
 

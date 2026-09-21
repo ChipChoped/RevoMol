@@ -46,7 +46,35 @@ def get_deep_neighborhood(neighborhood: list[tuple[str, list[Action]]]) -> list[
                                           action) for smiles, action in zip(depth_smiles, depth_actions)]
 
 
-def get_random_neighbor(start_smiles: str, only_valid: bool = True, depth: int = 1) -> tuple[str, Action | None, int]:
+def set_roulette_wheel_action_space(molecule: Molecule) -> None:
+    # Check actions allowed
+    action_space = [action.class_name() for action in MolecularGraph.action_space]
+
+    if "ChangeBondMG" in action_space:
+        if random.randint(0, len(action_space) - 1) == 0:
+            MolecularGraph.action_space = [mg.ChangeBondMG]
+        else:
+            molecule_size = molecule.get_representation(MolecularGraph).nb_atoms
+
+            if ("AddAtomMG" in action_space and
+                ("RemoveAtomMG" not in action_space or
+                 random.randint(0, Molecule.max_heavy_atoms - 2) >= molecule_size - 1)):
+                MolecularGraph.action_space = [mg.AddAtomMG]
+            else:
+                MolecularGraph.action_space = [mg.RemoveAtomMG]
+    else:
+        molecule_size = molecule.get_representation(MolecularGraph).nb_atoms
+
+        if ("AddAtomMG" in action_space and
+            ("RemoveAtomMG" not in action_space or
+             random.randint(0, Molecule.max_heavy_atoms - 2) >= molecule_size - 1)):
+            MolecularGraph.action_space = [mg.AddAtomMG]
+        else:
+            MolecularGraph.action_space = [mg.RemoveAtomMG]
+
+
+def get_random_neighbor(start_smiles: str, only_valid: bool = True, depth: int = 1, seed: int = 0,
+                        roulette_wheel: bool = False) -> tuple[str, Action | None, int]:
     """
     Get a random neighbor for a molecule without looking if it is realistic.
 
@@ -54,20 +82,45 @@ def get_random_neighbor(start_smiles: str, only_valid: bool = True, depth: int =
         start_smiles (str): The smiles of the starting molecule
         only_valid (bool): If true, only valid smiles will be returned.
         depth (int): The depth of the search
+        seed (int): The seed for the random number generator
+        roulette_wheel (bool): If true, the mutation operators will be chosen with a probability proportional to the size of the molecule
 
     Return:
         str: A random neighbor of the molecule
         Action: The action taken to get to the neighbor
         int: Size of the neighborhood
     """
+
     can_smi_start = (
         Molecule(start_smiles).get_representation(MolecularGraph).canonical_smiles
     )
+
+    if roulette_wheel:
+        whole_action_space: list[type[Action]] = MolecularGraph.action_space.copy()
+        leftover_action_space: list[type[Action]] = MolecularGraph.action_space.copy()
+        set_roulette_wheel_action_space(Molecule(can_smi_start))
 
     possible_smiles, possible_actions = en.find_neighbors(Molecule(can_smi_start), max_depth=1, info=True)
     neighborhood: list[tuple[str, list[Action]]] = [(Molecule(smiles).get_representation(MolecularGraph)
                                                      .canonical_smiles, [action])
                                                     for smiles, action in zip(possible_smiles, possible_actions)]
+
+    random.Random(seed).shuffle(neighborhood)
+
+    while neighborhood == [] and len(leftover_action_space) > 1:
+        leftover_action_space.remove(MolecularGraph.action_space[0])
+        MolecularGraph.action_space = leftover_action_space
+        set_roulette_wheel_action_space(Molecule(can_smi_start))
+
+        possible_smiles, possible_actions = en.find_neighbors(Molecule(can_smi_start), max_depth=1, info=True)
+        neighborhood: list[tuple[str, list[Action]]] = [(Molecule(smiles).get_representation(MolecularGraph)
+                                                         .canonical_smiles, [action])
+                                                        for smiles, action in zip(possible_smiles, possible_actions)]
+
+        random.Random(seed).shuffle(neighborhood)
+
+    if roulette_wheel:
+        MolecularGraph.action_space = whole_action_space
 
     for _ in range(1, depth):
         neighborhood = get_deep_neighborhood(neighborhood)
@@ -158,10 +211,12 @@ def find_first_improvement(neighborhood: list[tuple[str, list[Action]]], start_m
 
 
 def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: str, aggregate_realism: bool = False,
-                      only_valid: bool = True, depth: int = 1, beta: float = 1, seed: int = 0) -> tuple[str, None, int, int] | tuple[
-    str | list[Action] | tuple[str, list[Action]], str | list[Action] | tuple[str, list[Action]], Any, int] | tuple[
-                                             str, list[Action] | None, float | Synchronized, int] | tuple[
-                                             str | Action | None, str | Action | None, float | Synchronized, int]:
+                      only_valid: bool = True, depth: int = 1, beta: float = 1, seed: int = 0,
+                      roulette_wheel: bool = False) -> tuple[str, None, int, int] | tuple[str | list[Action] |
+                                             tuple[str, list[Action]], str | list[Action] | tuple[str, list[Action]],
+                                             Any, int] | tuple[str, list[Action] | None, float | Synchronized,
+                                             int] | tuple[str | Action | None, str | Action | None, float |
+                                             Synchronized, int]:
     """
     Get the neighbor with the highest fitness equal or higher than the starting molecule.
 
@@ -175,6 +230,8 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
         depth (int): Depth of the search
         beta (float): The beta parameter for aggregated walks (1. by default)
         seed (int): Seed for first improvement shuffle
+        roulette_wheel (bool): If true, the mutation operators will be chosen with a probability proportional to the
+        size of the molecule
 
     Return:
         str: The best neighbor of the molecule
@@ -185,12 +242,17 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
         Molecule(start_smiles).get_representation(MolecularGraph).canonical_smiles
     )
 
+    if roulette_wheel:
+        whole_action_space: list[type[Action]] = MolecularGraph.action_space.copy()
+        leftover_action_space: list[type[Action]] = MolecularGraph.action_space.copy()
+        set_roulette_wheel_action_space(Molecule(can_smi_start))
+
     possible_smiles, possible_actions = en.find_neighbors(Molecule(can_smi_start), max_depth=1, info=True)
     neighborhood: list[tuple[str, list[Action]]] = [(Molecule(smiles).get_representation(MolecularGraph)
                                                      .canonical_smiles, [action])
                                                     for smiles, action in zip(possible_smiles, possible_actions)]
 
-    if len(neighborhood) == 0:
+    if len(neighborhood) == 0 and not roulette_wheel:
         return "", None, 0, 0
     elif strategy == "best_improv":
         for _ in range(1, depth):
@@ -273,16 +335,40 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
             return best_neighbor[0], best_neighbor[1], best_fitness, len(neighborhood)
     elif strategy == "first_improv":
         start_mol = Molecule(start_smiles)
+        exit_counter = 0
 
         # Shuffle the neighborhood to get different results by changing the seed
         random.Random(seed).shuffle(neighborhood)
 
         if depth == 1:
-            return find_first_improvement(neighborhood, start_mol, fitness_function, aggregate_realism, beta)
+            if not roulette_wheel:
+                return find_first_improvement(neighborhood, start_mol, fitness_function, aggregate_realism, beta)
+            else:
+                best_improvement = find_first_improvement(neighborhood, start_mol, fitness_function, aggregate_realism, beta)
+
+                # Respin the wheel if neighborhood is null or if no better fitness can be found
+                while best_improvement[1] is None and len(leftover_action_space) > 1:
+                    leftover_action_space.remove(MolecularGraph.action_space[0])
+                    MolecularGraph.action_space = leftover_action_space
+                    set_roulette_wheel_action_space(start_mol)
+
+                    can_smiles = start_mol.get_representation(MolecularGraph).canonical_smiles
+                    possible_smiles, possible_actions = en.find_neighbors(Molecule(can_smiles), max_depth=1, info=True)
+                    neighborhood: list[tuple[str, list[Action]]] = [(Molecule(smiles).get_representation(MolecularGraph)
+                                                                     .canonical_smiles, [action])
+                                                                    for smiles, action in zip(possible_smiles, possible_actions)]
+
+                    random.Random(seed).shuffle(neighborhood)
+                    best_improvement = find_first_improvement(neighborhood, start_mol, fitness_function, aggregate_realism, beta)
+
+                MolecularGraph.action_space = whole_action_space
+
+                return best_improvement
         elif depth > 1:
             root_neighborhood: list[tuple[str, list[Action]]] = neighborhood
             best_improvement: tuple[str, list[Action] | None, float, int] = ("", None, 0, len(root_neighborhood))
             neighborhood_size: int = 0
+            found_improver: bool = False
 
             for i in range(len(root_neighborhood)):
                 for _ in range(1, depth):
@@ -304,9 +390,9 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
 
 
 def walk(start_smiles: str, n_steps: int, action_space: list[Action],
-         fitness_functions: list[Function], strategy: str= "random", evaluation_function: Function = None,
+         fitness_functions: list[Function], strategy: str = "random", evaluation_function: Function = None,
          aggregate_realism: bool = False, only_valid: bool = True, path: str = "results", seed: int = 0,
-         soft_change_bond: bool = False, depth: int = 1, beta: float = 1)\
+         soft_change_bond: bool = False, depth: int = 1, beta: float = 1, roulette_wheel: bool = False)\
     -> tuple[list[str], list[bool], dict[str, list[float]]]:
     """
     Perform a random or adaptive walk with based on a starting molecule and a set of allowed actions.
@@ -326,6 +412,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
         soft_change_bond (bool): If True, bond breaking and formation won't be allowed (False by default)
         depth (int): Depth of the search
         beta (float): The beta parameter for aggregated walks (1. by default)
+        roulette_wheel (bool): If True, the roulette wheel will be used to choose which action to perform
 
     Returns:
         list[str]: The path took during the random walk (list of smiles)
@@ -416,7 +503,9 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
 
             if strategy == "random":
                 neighbor, actions, neighborhood_size = get_random_neighbor(start_smiles=start_smiles,
-                                                                           only_valid=only_valid)
+                                                                           only_valid=only_valid,
+                                                                           seed=seed,
+                                                                           roulette_wheel=roulette_wheel)
 
                 csv_row.append(str(neighborhood_size))
                 writer.writerow(csv_row)
@@ -434,7 +523,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
                 neighbor, actions, neighbor_fitness, neighborhood_size =\
                     get_best_neighbor(start_smiles=start_smiles, fitness_function=evaluation_function,
                                       strategy=strategy, aggregate_realism=aggregate_realism, only_valid=only_valid,
-                                      depth=depth, beta=beta, seed=seed)
+                                      depth=depth, beta=beta, seed=seed, roulette_wheel=roulette_wheel)
 
                 csv_row.append(str(neighborhood_size))
                 writer.writerow(csv_row)

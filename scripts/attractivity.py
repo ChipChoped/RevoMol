@@ -32,7 +32,7 @@ FUNCTIONS = [
 
 
 def attractivity(lock: Lock, local_optima: DataFrame, steps: int, depth: int, aggregate_realism: bool,
-                 beta: float, file_path: str, process_id) -> None:  # type: ignore
+                 beta: float, roulette_wheel: bool, file_path: str, process_id) -> None:  # type: ignore
     dp.setup_default_parameters()
 
     for (index, row), _ in zip(local_optima.iterrows(),
@@ -62,7 +62,8 @@ def attractivity(lock: Lock, local_optima: DataFrame, steps: int, depth: int, ag
         print("\n\nStarting random walk from local optimum:", local_optimum)
 
         random_walk = walk(local_optimum, steps, action_space, FUNCTIONS, strategy="random", only_valid=False,
-                           path=path_, soft_change_bond=soft_change_bond, depth=depth, beta=beta)
+                           path=path_, soft_change_bond=soft_change_bond, depth=depth, beta=beta,
+                           roulette_wheel=roulette_wheel)
 
         try:
             print("\n\nStarting adaptive walk from the last molecule of the random walk\nwith evaluation function:",
@@ -73,7 +74,7 @@ def attractivity(lock: Lock, local_optima: DataFrame, steps: int, depth: int, ag
         adaptive_walk = walk(random_walk[0][-1], steps * 25, action_space, FUNCTIONS,
                              strategy="first_improv", only_valid=False, path=path_,
                              soft_change_bond=soft_change_bond, evaluation_function=evaluation_function,
-                             aggregate_realism=aggregate_realism, beta=beta)
+                             aggregate_realism=aggregate_realism, beta=beta, roulette_wheel=roulette_wheel)
 
         print("\n")
 
@@ -111,6 +112,8 @@ if __name__ == "__main__":
                              "function")
     parser.add_argument("--beta", type=float, help="Beta parameter for aggregated walks",
                         dest="beta", default=1)
+    parser.add_argument("-w", "--roulette-wheel", action="store_true", default=False,
+                        help="If set, the roulette wheel will be used to choose which action to perform",)
 
     arguments = parser.parse_args()
 
@@ -120,6 +123,7 @@ if __name__ == "__main__":
     depth: int = arguments.depth
     aggregate_realism: bool = arguments.aggregate_realism
     beta: float = arguments.beta
+    roulette_wheel: bool = arguments.roulette_wheel
 
     dp.setup_default_parameters()
 
@@ -144,7 +148,7 @@ if __name__ == "__main__":
     for n_process in range(max_processes):
         process: Process = Process(target=attractivity, args=(lock, split_rows[n_process],
                                                               arguments.steps, depth, aggregate_realism, beta,
-                                                              path + str(steps) + ".csv", n_process))
+                                                              roulette_wheel, path + str(steps) + ".csv", n_process))
         process.start()
         processes.append(process)
 
