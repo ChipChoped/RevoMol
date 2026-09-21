@@ -20,6 +20,7 @@ from .evaluation import Evaluation as Evaluation
 from .evaluation import EvaluationError as EvaluationError
 from .evaluation import Function as Function
 from .evaluation import is_valid_molecule as is_valid_molecule
+from .gcf import GCF as GCF
 from .generic_cyclic_features import FilterUnknownGCF as FilterUnknownGCF
 from .generic_cyclic_features import UnknownGCF as UnknownGCF
 from .logp import LogP as LogP

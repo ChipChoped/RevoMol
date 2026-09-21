@@ -39,7 +39,7 @@ def silly_walks(molecule: Molecule) -> float:
         radius: Radius for the ECFP (ECFP4 by default)
 
     Returns:
-        float: Sillywalk score
+        float: Silly Walks score
     """
     if molecule:
         unknown_ecfp: UnknownECFP = UnknownECFP()

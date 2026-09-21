@@ -38,7 +38,7 @@ def list_ecfp(molecule: Molecule, radius: int = 2) -> list[int]:
         .GetNonzeroElements()
         .keys()
     )
-    
+
     return fingerprints
 
 
@@ -53,7 +53,7 @@ class UnknownECFP(Evaluation):
         self,
         path_db: str = os.path.join("external_data", "ecfp4_ChEMBL_ZINC.txt"),
         radius: int = 2,
-        name: str = "chembl",
+        name: str = "chembl_zinc",
     ):
         """
         Init FilterECFP with the path to the reference database and the radius.
