@@ -22,6 +22,7 @@ from evomol.evaluation.qed import QED
 from evomol.evaluation.sa_score import SAScore
 from evomol.evaluation.silly_walks import Silly_Walks
 from evomol.evaluation.gcf import GCF
+from evomol.evaluation.realism import Realism
 from scripts.correlations import correlations
 
 if __name__ == "__main__":
@@ -35,7 +36,7 @@ if __name__ == "__main__":
                                  "MoveGroupMG", "RemoveAtomMG", "RemoveGroupMG", "SubstituteAtomMG"),
                         dest="actions", nargs="+")
     parser.add_argument("-e", "--evaluation", type=str, dest="evaluation_function", default=None,
-                        choices=("QED", "SAScore", "LogP", "PLogP", "LogP_Max", "PLogP_Max", "Silly_Walks", "GCF"),
+                        choices=("QED", "SAScore", "LogP", "PLogP", "LogP_Max", "PLogP_Max", "Silly_Walks", "GCF", "Realism"),
                         help="The evaluation function to use in adaptive walks")
     parser.add_argument("-r", "--aggregate-realism", action="store_true",
                         help="If set, makes an aggregation between the evaluation function if used with the silly walks"
@@ -112,7 +113,7 @@ if __name__ == "__main__":
         os.makedirs(path, exist_ok=True)
 
         correlations(smiles, arguments.max_steps, action_space,
-                                [QED, SAScore, LogP, PLogP, Silly_Walks, GCF],
+                                [QED, SAScore, LogP, PLogP, Silly_Walks, GCF, Realism],
                                 [Tanimoto, Levenshtein, GED, NormalizedGED],
                                 arguments.strategy, evaluation_function, arguments.aggregate_realism,
                                 arguments.only_valid, path, seed, arguments.soft_change_bond,
@@ -124,7 +125,7 @@ if __name__ == "__main__":
 
         # process = Process(target=correlations,
         #                   args=(smiles, arguments.max_steps, action_space,
-        #                         [QED, SAScore, LogP, PLogP, Silly_Walks],
+        #                         [QED, SAScore, LogP, PLogP, Silly_Walks, GCF, Realism],
         #                         [Tanimoto, Levenshtein, GED, NormalizedGED],
         #                         arguments.strategy, evaluation_function, arguments.aggregate_realism,
         #                         arguments.only_valid, path, seed, arguments.soft_change_bond,

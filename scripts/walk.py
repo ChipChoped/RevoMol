@@ -9,7 +9,7 @@ from evomol import default_parameters as dp
 from evomol import evaluation as evaluator
 from evomol.action import Action
 from evomol.evaluation import Function, ZincNormalizedLogP, NormalizedSAScore, CycleScore, NormalizedCycleScore, \
-    Evaluation, LogP, SAScore, QED, PLogP, Silly_Walks, LogP_Max, PLogP_Max, GCF
+    Evaluation, LogP, SAScore, QED, PLogP, Silly_Walks, LogP_Max, PLogP_Max, GCF, Realism
 from evomol.representation import Molecule, MolecularGraph
 from evomol.search import enumeration as en
 from evomol.action import molecular_graph as mg
@@ -199,7 +199,7 @@ def find_first_improvement(neighborhood: list[tuple[str, list[Action]]], start_m
             else:
                 neighbor_fitness = fitness_function.evaluate(neighbor_mol)
 
-                if (fitness_function.name in ["QED", "LogP_Max", "PLogP_Max"] and neighbor_fitness > best_fitness) or \
+                if (fitness_function.name in ["QED", "LogP_Max", "PLogP_Max", "Realism"] and neighbor_fitness > best_fitness) or \
                     (fitness_function.name in ["SAScore", "LogP", "PLogP", "Silly_Walks", "GCF"]
                      and neighbor_fitness < best_fitness):
                     best_fitness = neighbor_fitness
@@ -326,7 +326,7 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
                     else:
                         neighbor_fitness = fitness_function.evaluate(neighbor_mol)
 
-                        if (fitness_function.name in ["QED", "LogP_Max", "PLogP_Max"] and neighbor_fitness > best_fitness) or \
+                        if (fitness_function.name in ["QED", "LogP_Max", "PLogP_Max", "Realism"] and neighbor_fitness > best_fitness) or \
                             (fitness_function.name in ["SAScore", "LogP", "PLogP", "Silly_Walks", "GCF"]
                              and neighbor_fitness < best_fitness):
                             best_fitness = neighbor_fitness

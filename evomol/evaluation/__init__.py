@@ -37,6 +37,7 @@ from .sa_score import ZincNormalizedSAScore as ZincNormalizedSAScore
 from .silly_walks import Silly_Walks as Silly_Walks
 from .unknown_ecfp import FilterUnknownECFP as FilterUnknownECFP
 from .unknown_ecfp import UnknownECFP as UnknownECFP
+from .realism import Realism as Realism
 
 # removed to avoid guacamol dependency
 # from .isomer import Isomer as Isomer
