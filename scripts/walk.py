@@ -5,6 +5,8 @@ from multiprocessing import Pool, Value, Array, Lock, Process
 from multiprocessing.sharedctypes import Synchronized
 from typing import cast, Tuple, Any
 
+from rdkit import Chem
+
 from evomol import default_parameters as dp
 from evomol import evaluation as evaluator
 from evomol.action import Action
@@ -28,6 +30,40 @@ def set_plogp_values(mol: Molecule) -> None:
     mol.set_value("zinc_normalized_sa_score", NormalizedSAScore.evaluate(mol))
     mol.set_value("CycleScore", CycleScore.evaluate(mol))
     mol.set_value("zinc_normalized_cycle_score", NormalizedCycleScore.evaluate(mol))
+
+
+def get_cycles_info(smiles: str) -> tuple[int, int, int]:
+    """
+    Get the number of cycles, fused cycles and systems in a molecule.
+
+    Arg:
+        smiles (str): The SMILES string of the molecule to analyze
+
+    Return:
+        tuple[int, int, int]: A tuple with the number of cycles, fused cycles and systems
+    """
+    molecule = Chem.MolFromSmiles(smiles)
+    info = molecule.GetRingInfo()
+
+    # https://gist.github.com/greglandrum/de1751a42b3cae54011041dd67ae7415
+    systems = []
+    for ring in info.AtomRings():
+        ringAts = set(ring)
+        nSystems = []
+        for system in systems:
+            nInCommon = len(ringAts.intersection(system))
+            if nInCommon and (False or nInCommon > 1):
+                ringAts = ringAts.union(system)
+            else:
+                nSystems.append(system)
+        nSystems.append(ringAts)
+        systems = nSystems
+    #
+
+    ring_count = info.NumRings()
+    fused_ring_count = [info.IsRingFused(i) for i in range(info.NumRings())].count(True)
+
+    return ring_count, fused_ring_count, len(systems)
 
 
 def get_actions_neighborhood_size(smiles: str) -> dict[str, int]:
