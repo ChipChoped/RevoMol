@@ -30,6 +30,34 @@ def set_plogp_values(mol: Molecule) -> None:
     mol.set_value("zinc_normalized_cycle_score", NormalizedCycleScore.evaluate(mol))
 
 
+def get_actions_neighborhood_size(smiles: str) -> dict[str, int]:
+    """
+    Get the size of the neighborhood for each action in the action space and the total size of the neighborhood.
+
+    Arg:
+        smiles (str): The SMILES string of the molecule to get the neighborhood size for
+
+    Return:
+        dict[str, int]: A dictionary with the size of the neighborhood for each action and the
+        total size of the neighborhood
+    """
+    neighborhood_size: dict[str, int] = dict()
+    initial_action_space = MolecularGraph.action_space.copy()
+
+    for action in initial_action_space:
+        MolecularGraph.action_space = [action]
+        molecule = Molecule(Molecule(smiles).get_representation(MolecularGraph).canonical_smiles)
+        possible_smiles = en.find_neighbors(molecule, max_depth=1)
+        neighborhood_size[action.class_name()] = len(possible_smiles)
+
+    MolecularGraph.action_space = initial_action_space
+    molecule = Molecule(Molecule(smiles).get_representation(MolecularGraph).canonical_smiles)
+    possible_smiles = en.find_neighbors(molecule, max_depth=1)
+    neighborhood_size["total"] = len(possible_smiles)
+
+    return neighborhood_size
+
+
 def get_deep_neighborhood(neighborhood: list[tuple[str, list[Action]]]) -> list[tuple[str, list[Action]]]:
     depth_smiles: list[str] = []
     depth_actions: list[list[Action]] = []
@@ -454,22 +482,26 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
         plateau: list[int] = []
         plateaus: list[tuple[float, list[int]]] = []
 
-    with open(path + "walk.csv", "a", newline='') as file:
-        writer = csv.writer(file, lineterminator='\n')
+    with (open(path + "walk.csv", "a", newline='') as walk_file,
+          open(path + "actions_neighborhood_size.csv", "a", newline='') as sizes_file):
+        walk_writer = csv.writer(walk_file, lineterminator='\n')
+        walk_csv_row = ["smiles", "is_valid"]
+        walk_csv_row.extend([function.name for function in fitness_functions])
 
-        csv_row = ["smiles", "is_valid"]
-        csv_row.extend([function.name for function in fitness_functions])
+        sizes_writer = csv.writer(sizes_file, lineterminator='\n')
+        sizes_csv_row = [action.class_name() for action in MolecularGraph.action_space]
+        sizes_writer.writerow(sizes_csv_row)
 
         if aggregate_realism:
-            csv_row.append(evaluation_function.name + "-Silly_Walks")
+            walk_csv_row.append(evaluation_function.name + "-Silly_Walks")
 
         if depth == 1:
-            csv_row.extend(["action", "action_context", "neighborhood_size"])
+            walk_csv_row.extend(["action", "action_context", "neighborhood_size"])
         else:
-            csv_row.extend(["actions", "actions_context", "neighborhood_size"])
+            walk_csv_row.extend(["actions", "actions_context", "neighborhood_size"])
 
-        writer.writerow(csv_row)
-        csv_row = [start_smiles, are_valid[-1]]
+        walk_writer.writerow(walk_csv_row)
+        walk_csv_row = [start_smiles, are_valid[-1]]
 
         for fitness_function, i in zip(fitness_functions, range(len(fitness_functions))):
             # Evaluation needed for the PlogP calculation
@@ -483,15 +515,19 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
             start_mol.set_value(function_name, fitness)
 
             print(function_name, ":", fitnesses[function_name][0])
-            csv_row.append(str(fitnesses[function_name][0]))
+            walk_csv_row.append(str(fitnesses[function_name][0]))
 
         if aggregate_realism:
             print(evaluation_function.name + "-Silly_Walks:", start_fitness)
 
-            csv_row.append(str(start_fitness))
+            walk_csv_row.append(str(start_fitness))
             aggregation: float = start_fitness
 
-        csv_row.extend(["None", "None"])
+        walk_csv_row.extend(["None", "None"])
+
+        neighborhood_sizes: dict[str, int] = get_actions_neighborhood_size(start_smiles)
+        sizes_csv_row = [neighborhood_sizes[action.class_name()] for action in MolecularGraph.action_space]
+        sizes_writer.writerow(sizes_csv_row)
 
         init_smiles: str = start_smiles
 
@@ -507,8 +543,8 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
                                                                            seed=seed,
                                                                            roulette_wheel=roulette_wheel)
 
-                csv_row.append(str(neighborhood_size))
-                writer.writerow(csv_row)
+                walk_csv_row.append(str(neighborhood_size))
+                walk_writer.writerow(walk_csv_row)
 
                 end_time = time.time() - start_time
                 runtime += end_time
@@ -525,8 +561,8 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
                                       strategy=strategy, aggregate_realism=aggregate_realism, only_valid=only_valid,
                                       depth=depth, beta=beta, seed=seed, roulette_wheel=roulette_wheel)
 
-                csv_row.append(str(neighborhood_size))
-                writer.writerow(csv_row)
+                walk_csv_row.append(str(neighborhood_size))
+                walk_writer.writerow(walk_csv_row)
 
                 end_time = time.time() - start_time
                 runtime += end_time
@@ -549,7 +585,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
                             plateau_writer = csv.writer(plateau_file, lineterminator='\n')
 
                             if aggregate_realism:
-                                csv_row.append(evaluation_function.name + "-Silly_Walks")
+                                walk_csv_row.append(evaluation_function.name + "-Silly_Walks")
 
                             row = ["step", "smiles", "start_smiles", "evaluation_function"]
                             row.extend([function.name for function in fitness_functions])
@@ -593,7 +629,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
             for action, action_context in zip(actions, actions_context):
                 print(action.class_name(), action_context)
 
-            csv_row = [start_smiles, are_valid[-1]]
+            walk_csv_row = [start_smiles, are_valid[-1]]
 
             for fitness_function, i in zip(fitness_functions, range(len(fitness_functions))):
                 function_name = fitness_function.name
@@ -606,27 +642,31 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
                 neighbor_mol.set_value(function_name, fitness)
 
                 print(function_name + ":", fitnesses[fitness_function.name][-1])
-                csv_row.append(fitnesses[fitness_function.name][-1])
+                walk_csv_row.append(fitnesses[fitness_function.name][-1])
 
             if aggregate_realism:
                 aggregation = neighbor_fitness
                 print(evaluation_function.name + "-Silly_Walks:", aggregation)
-                csv_row.append(aggregation)
+                walk_csv_row.append(aggregation)
 
             if depth == 1:
-                csv_row.extend([actions[0].class_name(), actions_context[0]])
+                walk_csv_row.extend([actions[0].class_name(), actions_context[0]])
             else:
-                csv_row.extend([[action.class_name() for action in actions], actions_context])
+                walk_csv_row.extend([[action.class_name() for action in actions], actions_context])
+
+            neighborhood_sizes: dict[str, int] = get_actions_neighborhood_size(neighbor)
+            sizes_csv_row = [neighborhood_sizes[action.class_name()] for action in MolecularGraph.action_space]
+            sizes_writer.writerow(sizes_csv_row)
 
     if strategy in ["best_improv", "first_improv"]:
-        with open(path + "local_optimum.csv", "a", newline='') as file:
-            writer = csv.writer(file, lineterminator='\n')
+        with open(path + "local_optimum.csv", "a", newline='') as walk_file:
+            walk_writer = csv.writer(walk_file, lineterminator='\n')
 
             if len(molecules) - 1 != n_steps:
                 row = ["smiles", "start_smiles", "is_valid", "steps_taken", "evaluation_function"]
                 row.extend([function.name for function in fitness_functions])
 
-                writer.writerow(row)
+                walk_writer.writerow(row)
 
                 row = [start_smiles, molecules[0], are_valid[-1], len(molecules) - 1, evaluation_function.name]
 
@@ -636,14 +676,14 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
                 if aggregate_realism:
                     row.append(aggregation)
 
-                writer.writerow(row)
+                walk_writer.writerow(row)
             else:
-                writer.writerow(["No local optimum found in " + str(n_steps) + " steps."])
+                walk_writer.writerow(["No local optimum found in " + str(n_steps) + " steps."])
 
-    with open(path + "running_time.csv", "a", newline='') as file:
-        writer = csv.writer(file, lineterminator='\n')
-        writer.writerow(["time"])
-        writer.writerow([runtime])
+    with open(path + "running_time.csv", "a", newline='') as walk_file:
+        walk_writer = csv.writer(walk_file, lineterminator='\n')
+        walk_writer.writerow(["time"])
+        walk_writer.writerow([runtime])
 
         print("\n Running time (s):", runtime)
 
