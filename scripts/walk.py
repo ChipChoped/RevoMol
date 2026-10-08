@@ -519,7 +519,8 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
         plateaus: list[tuple[float, list[int]]] = []
 
     with (open(path + "walk.csv", "a", newline='') as walk_file,
-          open(path + "actions_neighborhood_size.csv", "a", newline='') as sizes_file):
+          open(path + "actions_neighborhood_size.csv", "a", newline='') as sizes_file,
+          open(path + "cycles.csv", "a", newline='') as cycles_file):
         walk_writer = csv.writer(walk_file, lineterminator='\n')
         walk_csv_row = ["smiles", "is_valid"]
         walk_csv_row.extend([function.name for function in fitness_functions])
@@ -527,6 +528,10 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
         sizes_writer = csv.writer(sizes_file, lineterminator='\n')
         sizes_csv_row = [action.class_name() for action in MolecularGraph.action_space]
         sizes_writer.writerow(sizes_csv_row)
+
+        cycles_writer = csv.writer(cycles_file, lineterminator='\n')
+        cycles_csv_row = ["cycles", "fused", "systems"]
+        cycles_writer.writerow(cycles_csv_row)
 
         if aggregate_realism:
             walk_csv_row.append(evaluation_function.name + "-Silly_Walks")
@@ -564,6 +569,8 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
         neighborhood_sizes: dict[str, int] = get_actions_neighborhood_size(start_smiles)
         sizes_csv_row = [neighborhood_sizes[action.class_name()] for action in MolecularGraph.action_space]
         sizes_writer.writerow(sizes_csv_row)
+
+        cycles_writer.writerow(get_cycles_info(start_smiles))
 
         init_smiles: str = start_smiles
 
@@ -693,6 +700,8 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
             neighborhood_sizes: dict[str, int] = get_actions_neighborhood_size(neighbor)
             sizes_csv_row = [neighborhood_sizes[action.class_name()] for action in MolecularGraph.action_space]
             sizes_writer.writerow(sizes_csv_row)
+
+            cycles_writer.writerow(get_cycles_info(neighbor))
 
     if strategy in ["best_improv", "first_improv"]:
         with open(path + "local_optimum.csv", "a", newline='') as walk_file:
