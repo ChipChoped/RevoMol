@@ -2,10 +2,11 @@
 Cost of the matrix rules (newmut, milestone 2).
 
 Runs the same short QED evolutionary algorithm (max_heavy_atoms = 38, fixed
-seed) three times:
+seed) four times:
 - default action space (setup_default_action_space);
 - matrix rules without the cache of filtered actions;
-- matrix rules with the cache.
+- matrix rules with the cache;
+- matrix rules tested one at a time (NewMutNeighborhoodStrategy, lazy_rules).
 Then times list_actions of each action type on a large molecule, without
 cache.
 
@@ -28,6 +29,7 @@ from evomol import default_parameters as dp
 from evomol import evaluation as evaluator
 from evomol.newmut import rule_filtered as rf
 from evomol.newmut.default_parameters import setup_newmut_action_space
+from evomol.newmut.neighborhood_strategy import NewMutNeighborhoodStrategy
 from evomol.representation import MolecularGraph, Molecule
 from evomol.search.evolutionary_algorithm import (
     EvolutionaryAlgorithm,
@@ -68,7 +70,11 @@ def run(mode: str, args: argparse.Namespace) -> dict[str, float]:
     for molecule in population:
         evaluator.QED.evaluate(molecule)
 
-    neighborhood = RandomNeighborhoodStrategy(depth=2)
+    neighborhood = (
+        NewMutNeighborhoodStrategy(depth=2, lazy_rules=True)
+        if mode == "rules_lazy"
+        else RandomNeighborhoodStrategy(depth=2)
+    )
     algorithm = EvolutionaryAlgorithm(
         population=population,
         parameters=ParametersEvolutionaryAlgorithm(
@@ -141,7 +147,7 @@ def main() -> None:
     dp.setup_default_parameters(max_heavy_atoms=38)
 
     results = {
-        mode: run(mode, args) for mode in ("default", "rules_no_cache", "rules_cache")
+        mode: run(mode, args) for mode in ("default", "rules_no_cache", "rules_cache", "rules_lazy")
     }
     print(
         f"EA QED : {args.generations} générations x {args.replacements} "

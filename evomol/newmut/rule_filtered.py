@@ -18,6 +18,8 @@ from __future__ import annotations
 from collections import OrderedDict
 from typing import Hashable
 
+import numpy as np
+
 from evomol.action import Action
 from evomol.action import molecular_graph as mg
 from evomol.action.molecular_graph.action_molecular_graph import ActionMolGraph
@@ -74,28 +76,30 @@ def result_graph(action: ActionMolGraph, mol_graph: MolecularGraph) -> Molecular
     return new_mol_graph
 
 
-def allowed_flags(
-    actions: list[Action], mol_graph: MolecularGraph
-) -> tuple[bool, ...]:
-    """For each action, True if its result creates no new violation."""
-    types_before, matrix_before = to_matrix(mol_graph)
-    flags = []
-    for action in actions:
-        assert isinstance(action, ActionMolGraph)
-        try:
-            types_after, matrix_after = to_matrix(result_graph(action, mol_graph))
-        except Exception as exc:  # pylint: disable=broad-except
-            get_logger().debug("Action %s refused (error: %r)", action, exc)
-            flags.append(False)
-            continue
-        flags.append(
-            matrices_allowed(types_before, matrix_before, types_after, matrix_after)
-        )
-    return tuple(flags)
+def action_is_allowed(
+    action: ActionMolGraph,
+    mol_graph: MolecularGraph,
+    before: tuple[list[str], np.ndarray] | None = None,
+) -> bool:
+    """True if the result of the action creates no new violation.
+
+    Args:
+        action: action to check.
+        mol_graph: molecular graph the action applies to.
+        before: to_matrix(mol_graph), if already computed.
+    """
+    if before is None:
+        before = to_matrix(mol_graph)
+    try:
+        after = to_matrix(result_graph(action, mol_graph))
+    except Exception as exc:  # pylint: disable=broad-except
+        get_logger().debug("Action %s refused (error: %r)", action, exc)
+        return False
+    return matrices_allowed(before[0], before[1], after[0], after[1])
 
 
 def filter_actions(
-    name: str, actions: list[Action], molecule: Molecule
+    action_class: type[RuleCheckedMixin], actions: list[Action], molecule: Molecule
 ) -> list[Action]:
     """Keep the actions whose result creates no new violation (cached)."""
     if not actions:
@@ -105,7 +109,7 @@ def filter_actions(
     flags: tuple[bool, ...] | None = None
     key: tuple[Hashable, ...] | None = None
     if CACHE_SIZE > 0:
-        key = (name, *graph_key(mol_graph))
+        key = (action_class.class_name(), *graph_key(mol_graph))
         flags = _cache.get(key)
         if flags is not None and len(flags) == len(actions):
             _cache.move_to_end(key)
@@ -113,7 +117,11 @@ def filter_actions(
             flags = None
 
     if flags is None:
-        flags = allowed_flags(actions, mol_graph)
+        before = to_matrix(mol_graph)
+        flags = tuple(
+            action_class.action_is_allowed(action, molecule, before)
+            for action in actions
+        )
         if key is not None:
             _cache[key] = flags
             if len(_cache) > CACHE_SIZE:
@@ -122,11 +130,51 @@ def filter_actions(
     return [action for action, flag in zip(actions, flags) if flag]
 
 
-class _RuleFilteredMixin:
-    """list_actions of the wrapped class, restricted by the matrix rules."""
+class RuleCheckedMixin:
+    """Base of the actions that apply the matrix rules.
+
+    A subclass gives its candidate actions (list_unchecked_actions);
+    list_actions keeps those whose result creates no new violation
+    (action_is_allowed), with a cache per molecular graph. The neighborhood
+    strategy of newmut with lazy_rules=True uses list_unchecked_actions and
+    action_is_allowed directly, to test the candidates one at a time.
+    """
 
     # True for the action classes that already apply the matrix rules
     checks_rules: bool = True
+
+    @classmethod
+    def class_name(cls) -> str:
+        """Return the class name of the action."""
+        return cls.__name__
+
+    @classmethod
+    def list_unchecked_actions(cls, molecule: Molecule) -> list[Action]:
+        """Candidate actions, before the matrix rules."""
+        raise NotImplementedError
+
+    @classmethod
+    def action_is_allowed(
+        cls,
+        action: Action,
+        molecule: Molecule,
+        before: tuple[list[str], np.ndarray] | None = None,
+    ) -> bool:
+        """True if the result of the action creates no new violation."""
+        assert isinstance(action, ActionMolGraph)
+        return action_is_allowed(
+            action, molecule.get_representation(MolecularGraph), before
+        )
+
+    @classmethod
+    def list_actions(cls, molecule: Molecule) -> list[Action]:
+        """Candidate actions whose result respects the rules."""
+        return filter_actions(cls, cls.list_unchecked_actions(molecule), molecule)
+
+
+class _RuleFilteredMixin(RuleCheckedMixin):
+    """list_actions of the wrapped class, restricted by the matrix rules."""
+
     inner_class: type[ActionMolGraph]
 
     @classmethod
@@ -135,10 +183,9 @@ class _RuleFilteredMixin:
         return cls.inner_class.class_name()
 
     @classmethod
-    def list_actions(cls, molecule: Molecule) -> list[Action]:
-        """Actions of the wrapped class whose result respects the rules."""
-        actions: list[Action] = super().list_actions(molecule)  # type: ignore[misc]
-        return filter_actions(cls.inner_class.class_name(), actions, molecule)
+    def list_unchecked_actions(cls, molecule: Molecule) -> list[Action]:
+        """Actions listed by the wrapped class."""
+        return cls.inner_class.list_actions(molecule)
 
 
 def rule_filtered(action_class: type[ActionMolGraph]) -> type[ActionMolGraph]:
