@@ -6,10 +6,12 @@ from __future__ import annotations
 
 import networkx as nx
 from rdkit import Chem
-from rdkit.Chem.rdchem import IMPLICIT
 from typing_extensions import override
 
 from evomol.representation.molecule import MoleculeRepresentation
+
+# double bond inside a ring (see MolecularGraph.canonical_smiles)
+_RING_DOUBLE_BOND = Chem.MolFromSmarts("*=@*")
 
 
 # pylint: disable=too-many-public-methods
@@ -17,6 +19,12 @@ class MolecularGraph(MoleculeRepresentation):
     """
     Molecule representation using a molecular graph with RDKit.
     """
+
+    # True: canonical_smiles gives one Kekulé form per molecule (see
+    # canonical_smiles). False (default): direct writing of self.mol, an
+    # aromatic molecule can have two SMILES depending on the mutations that
+    # built it. Set by default_parameters.setup_default_parameters.
+    unique_kekule: bool = False
 
     def __init__(self, smiles: str, sanitize: bool = False):
         super().__init__(smiles)
@@ -38,6 +46,26 @@ class MolecularGraph(MoleculeRepresentation):
         mol.update_representation()
         return mol
 
+    def raw_copy(self) -> MolecularGraph:
+        """Structural copy that skips update_representation.
+
+        self.mol is already sanitized/kekulized, and Chem.RWMol(mol, True)
+        preserves that structure, so re-sanitizing the copy just redoes work
+        already done on the parent. Instead the parent is sanitized once (at
+        its creation) and each action clones from it cheaply.
+
+        Contract: the returned graph is meant to be mutated in place by an
+        action and then finalized with update_representation(). It must NOT be
+        read as-is (canonical_smiles, validity, ...) before that call, since
+        its property cache / ring info are not refreshed.
+        """
+        mol = MolecularGraph.__new__(MolecularGraph)
+        mol.str_id = self.str_id
+        mol.sanitize = self.sanitize
+        mol.mol = Chem.RWMol(self.mol, True)
+        mol._clear_cached_derivatives()
+        return mol
+
     def __eq__(self, value: object) -> bool:
         if not isinstance(value, MolecularGraph):
             return False
@@ -50,6 +78,12 @@ class MolecularGraph(MoleculeRepresentation):
     def __repr__(self) -> str:
         return f"MolecularGraph({self.canonical_smiles})"
 
+    def _clear_cached_derivatives(self) -> None:
+        """Invalidate the cached SMILES/mol derivatives after any mutation."""
+        self._canonical_smiles: str | None = None
+        self._aromatic_mol: Chem.rdchem.Mol | None = None
+        self._aromatic_smiles: str | None = None
+
     @property
     def nb_atoms(self) -> int:
         """Return the number of atoms in the molecule."""
@@ -60,24 +94,70 @@ class MolecularGraph(MoleculeRepresentation):
     def canonical_smiles(self) -> str:
         """
         Return the canonical and non-aromatic SMILES representation of the molecule.
+
+        With MolecularGraph.unique_kekule, unique whatever the placement of
+        the double bonds in self.mol: an aromatic molecule can be kekulized in
+        several ways (depending on the mutations that built it), so its Kekulé
+        form is rebuilt from the aromatic canonical SMILES (one aromatization,
+        one kekulization).
+        A molecule with several Kekulé forms has an alternating ring, so at
+        least two ring double bonds in each form; the others have a single
+        Kekulé form and keep the direct writing of self.mol (same string, no
+        round trip).
         """
-        smiles: str = Chem.MolToSmiles(
-            self.mol,
-            kekuleSmiles=True,
-            canonical=True,
-        )
+        if self._canonical_smiles is None:
+            if (
+                MolecularGraph.unique_kekule
+                and len(self.mol.GetSubstructMatches(_RING_DOUBLE_BOND, maxMatches=2))
+                >= 2
+            ):
+                self._canonical_smiles = self._unique_kekule_smiles()
+            else:
+                self._canonical_smiles = Chem.MolToSmiles(
+                    self.mol,
+                    kekuleSmiles=True,
+                    canonical=True,
+                )
+        return self._canonical_smiles
+
+    def _unique_kekule_smiles(self) -> str:
+        """Kekulé SMILES rebuilt from the aromatic canonical SMILES.
+
+        Also fills the aromatic SMILES cache. Falls back to the direct writing
+        of self.mol if RDKit cannot aromatize or kekulize the molecule.
+        """
+        try:
+            aromatic = Chem.Mol(self.mol)
+            Chem.SanitizeMol(aromatic)
+            aromatic_smiles = Chem.MolToSmiles(aromatic, canonical=True)
+            kekule = Chem.MolFromSmiles(aromatic_smiles)
+            Chem.Kekulize(kekule, clearAromaticFlags=True)
+            smiles: str = Chem.MolToSmiles(kekule, kekuleSmiles=True, canonical=True)
+        except Exception:  # pylint: disable=broad-except
+            return Chem.MolToSmiles(self.mol, kekuleSmiles=True, canonical=True)
+        self._aromatic_smiles = aromatic_smiles
         return smiles
+
+    @property
+    def aromatic_mol(self) -> Chem.rdchem.Mol:
+        """Return a sanitized (aromatic) RDKit mol of the molecule.
+
+        Parsed once from the canonical SMILES and cached; self.mol stays the
+        kekulized working graph.
+        """
+        if self._aromatic_mol is None:
+            self._aromatic_mol = Chem.MolFromSmiles(self.canonical_smiles)
+        return self._aromatic_mol
 
     @property
     def aromatic_canonical_smiles(self) -> str:
         """Return the aromatic canonical SMILES representation of the molecule."""
-        canonic_smiles: str = Chem.MolToSmiles(
-            Chem.MolFromSmiles(
-                Chem.MolToSmiles(MolecularGraph(Chem.MolToSmiles(self.mol)).mol)
-            ),
-            canonical=True,
-        )
-        return canonic_smiles
+        if self._aromatic_smiles is None:
+            self._aromatic_smiles = Chem.MolToSmiles(
+                self.aromatic_mol,
+                canonical=True,
+            )
+        return self._aromatic_smiles
 
     @property
     def adjacency_matrix(self) -> list[list[int]]:
@@ -179,6 +259,8 @@ class MolecularGraph(MoleculeRepresentation):
         """Update internal RDKit representation of the molecular graph.
         This method should be called after each action on the molecular graph.
         """
+        self._clear_cached_derivatives()
+
         # sanitize molecule if needed
         # https://www.rdkit.org/docs/RDKit_Book.html#molecular-sanitization
         if self.sanitize:
@@ -277,7 +359,7 @@ class MolecularGraph(MoleculeRepresentation):
         """
         atom = self.mol.GetAtomWithIdx(atom_idx)
         atom.UpdatePropertyCache()
-        valence: int = atom.GetValence(IMPLICIT)
+        valence: int = atom.GetImplicitValence()
         if atom.GetSymbol() == "S":
             total_valence: int = atom.GetTotalValence()
             if total_valence in (2, 4):
@@ -298,6 +380,7 @@ class MolecularGraph(MoleculeRepresentation):
         atom = Chem.Atom(atom_type)
         atom.SetBoolProp("mutability", True)
         self.mol.AddAtom(atom)
+        self._clear_cached_derivatives()
 
     def remove_atom(self, atom_idx: int) -> None:
         """Removing the atom at the given index from the molecular graph.
@@ -307,6 +390,7 @@ class MolecularGraph(MoleculeRepresentation):
                 atom index
         """
         self.mol.RemoveAtom(atom_idx)
+        self._clear_cached_derivatives()
 
     def replace_atom(self, atom_idx: int, atom_type: str) -> None:
         """Replace the atom at the given index with the given atom type.
@@ -324,6 +408,7 @@ class MolecularGraph(MoleculeRepresentation):
 
         # Setting formal charge to 0
         self.mol.GetAtomWithIdx(atom_idx).SetFormalCharge(0)
+        self._clear_cached_derivatives()
 
     def set_bond(self, atom1_idx: int, atom2_idx: int, bond_type_num: int) -> None:
         """Set the bond between the two atoms to the given bond type.
@@ -362,6 +447,7 @@ class MolecularGraph(MoleculeRepresentation):
         else:
             # Changing the bond type
             bond.SetBondType(bond_type)
+        self._clear_cached_derivatives()
 
     def add_group(self, atom_to_link: int, smiles: str, added_group_atom: int) -> None:
         """Add a group to the molecular graph.
@@ -390,6 +476,7 @@ class MolecularGraph(MoleculeRepresentation):
             atom.UpdatePropertyCache()
         # update RDKit representation
         self.mol.UpdatePropertyCache()
+        self._clear_cached_derivatives()
 
     def change_smiles(self, smiles: str) -> None:
         """Change the SMILES representation of the molecular graph.
@@ -399,3 +486,4 @@ class MolecularGraph(MoleculeRepresentation):
                 new SMILES representation of the molecular graph.
         """
         self.mol = Chem.RWMol(Chem.MolFromSmiles(smiles))
+        self._clear_cached_derivatives()

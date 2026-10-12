@@ -15,9 +15,12 @@ from typing import Any
 from typing_extensions import override
 
 
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
 def init_logger(
-    config_file: str = os.path.join("logging_configs", "stderr-json-file.json"),
-    output_file: str = os.path.join("logs", "evomol_default.log"),
+    config_file: str = os.path.join(_PROJECT_ROOT, "logging_configs", "stderr-json-file.json"),
+    output_file: str = os.path.join(_PROJECT_ROOT, "logs", "evomol_default.log"),
 ) -> logging.Logger:
     """Initialize the logger.
 
@@ -51,7 +54,7 @@ def get_logger() -> logging.Logger:
 
 
 def setup_logging(
-    config_file: str = os.path.join("logging_configs", "stderr-json-file.json"),
+    config_file: str = os.path.join(_PROJECT_ROOT, "logging_configs", "stderr-json-file.json"),
     output_file: str = "",
 ) -> None:
     """Setup logging configuration from a JSON file."""

@@ -20,24 +20,29 @@ from .evaluation import Evaluation as Evaluation
 from .evaluation import EvaluationError as EvaluationError
 from .evaluation import Function as Function
 from .evaluation import is_valid_molecule as is_valid_molecule
-from .gcf import GCF as GCF
 from .generic_cyclic_features import FilterUnknownGCF as FilterUnknownGCF
 from .generic_cyclic_features import UnknownGCF as UnknownGCF
 from .logp import LogP as LogP
-from .logp import LogP_Max as LogP_Max
 from .logp import ZincNormalizedLogP as ZincNormalizedLogP
-from .logp import ZincNormalizedLogP_Max as ZincNormalizedLogP_Max
 from .plogp import PLogP as PLogP
-from .plogp import PLogP_Max as PLogP_Max
 from .qed import QED as QED
 from .rd_filters import RDFilters as RDFilters
 from .sa_score import NormalizedSAScore as NormalizedSAScore
 from .sa_score import SAScore as SAScore
 from .sa_score import ZincNormalizedSAScore as ZincNormalizedSAScore
-from .silly_walks import Silly_Walks as Silly_Walks
 from .unknown_ecfp import FilterUnknownECFP as FilterUnknownECFP
 from .unknown_ecfp import UnknownECFP as UnknownECFP
-from .realism import Realism as Realism
+from .huckel import Huckel as Huckel
+from .huckel import HuckelCompatible as HuckelCompatible
+from .huckel import HuckelHOMO as HuckelHOMO
+from .huckel import HuckelLUMO as HuckelLUMO
+from .huckel import HuckelGap as HuckelGap
+from .huckel import HuckelOrbitalLambda as HuckelOrbitalLambda
+from .huckel import HuckelOrbitalLambdaOverlap as HuckelOrbitalLambdaOverlap
+from .pi_systems import PiSystems as PiSystems
+from .pi_systems import PiChainSize as PiChainSize
+from .pi_systems import PctPiAtoms as PctPiAtoms
+from .pi_systems import pi_systems as pi_systems
 
 # removed to avoid guacamol dependency
 # from .isomer import Isomer as Isomer

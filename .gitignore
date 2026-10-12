@@ -110,21 +110,6 @@ ENV/
 
 external_data/
 
-notebooks/
-
-archives/
-results/
-output/
-plots/
-tmp/
-
-slurm/
-bash/
-
-/*.zip
-
-scripts/test.py
-scripts/get_local_optima.py
-scripts/get_random_molecules.py
-scripts/draw_mol.py
-scripts/sample_molecules.py
+notebooks/random_walk/ancien/
+notebooks/random_walk/results/
+output/*

@@ -11,7 +11,13 @@ import rdkit
 from rdkit import Chem
 from rdkit.Chem import AllChem
 from rdkit.Chem.Scaffolds import MurckoScaffold
-from rdkit.Contrib.IFG import ifg
+try:
+    from rdkit.Contrib.IFG import ifg
+except ModuleNotFoundError:
+    try:
+        from Contrib.IFG import ifg
+    except ModuleNotFoundError:
+        ifg = None
 from typing_extensions import override
 
 from evomol.evaluation.evaluation import Evaluation

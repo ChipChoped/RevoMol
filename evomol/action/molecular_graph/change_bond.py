@@ -16,10 +16,14 @@ class ChangeBondMG(ActionMolGraph):
     """
     Changing a bond from any type to any type among no bond, single, double, triple.
 
+    by_one_step (off by default): the bond order only changes by one at a time
+    (0 -> 1, 1 -> 0 or 2, 2 -> 1 or 3, 3 -> 2). Default: original behaviour, any
+    order can be reached in one action (e.g. 0 -> 2, 1 -> 3, 3 -> 0).
     """
 
     avoid_bond_breaking: bool = False
     avoid_bond_forming: bool = False
+    by_one_step: bool = False
 
     def __init__(
         self,
@@ -91,7 +95,10 @@ class ChangeBondMG(ActionMolGraph):
 
             # determine possible new bonds based on current bond
             new_possible_bonds: list[int]
-            if current_bond == 0:
+            if not cls.by_one_step:
+                # original behaviour: any bond order
+                new_possible_bonds = [0, 1, 2, 3]
+            elif current_bond == 0:
                 # can only increase bond
                 new_possible_bonds = [1]
             elif current_bond == 1:

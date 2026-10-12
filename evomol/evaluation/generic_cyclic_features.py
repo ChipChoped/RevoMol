@@ -53,6 +53,29 @@ def convert_to_carbon(smiles: str) -> str:
     return mol_scaffolds.canonical_smiles
 
 
+def divide_subgraphs_from_graph(mol_graph: MolecularGraph) -> set[str]:
+    """Remove bridge bonds in a copy of the molecular graph and return subgraphs.
+
+    Works on a copy of an existing MolecularGraph, avoiding a SMILES re-parse.
+
+    Args:
+        mol_graph (MolecularGraph): molecular graph of the molecule
+
+    Returns:
+        set[str]: subgraphs in the molecule
+    """
+    work_graph = mol_graph.raw_copy()
+
+    # delete all bridge bonds
+    for atom1, atom2 in work_graph.bridge_bonds:
+        work_graph.set_bond(atom1, atom2, 0)
+
+    work_graph.update_representation()
+
+    subgraphs: set[str] = set(work_graph.canonical_smiles.split("."))
+    return subgraphs
+
+
 def divide_subgraphs(smiles: str) -> set[str]:
     """Remove bridge bonds in the molecule and return subgraphs
 
@@ -62,16 +85,33 @@ def divide_subgraphs(smiles: str) -> set[str]:
     Returns:
         set[str]: subgraphs in the molecule
     """
-    mol_graph = MolecularGraph(smiles)
+    return divide_subgraphs_from_graph(MolecularGraph(smiles))
 
-    # delete all bridge bonds
-    for atom1, atom2 in mol_graph.bridge_bonds:
-        mol_graph.set_bond(atom1, atom2, 0)
 
-    mol_graph.update_representation()
+def list_gcf_from_graph(mol_graph: MolecularGraph) -> set[str]:
+    """Compute all generic cyclic features of a molecule from its graph.
 
-    subgraphs: set[str] = set(mol_graph.canonical_smiles.split("."))
-    return subgraphs
+    Same as list_gcf but reuses an existing MolecularGraph instead of
+    re-parsing the SMILES.
+
+    Args:
+        mol_graph (MolecularGraph): molecular graph of the molecule
+
+    Returns:
+        set[str]: List of generic cyclic features (with insaturations)
+    """
+    subgraphs: set[str] = divide_subgraphs_from_graph(mol_graph)
+
+    # computes smiles of rings features and remove unique atoms
+    # the length condition is to avoid computing the scaffold of subgraphs
+    # that are not cyclic (minimum length of the SMILES of a cycle is 5,
+    # as it is a cycle with 3 atoms and 2 numbers representing the ring closure
+    # , eg. C1CC1)
+    features: set[str] = set(
+        convert_to_carbon(smiles) for smiles in subgraphs if len(smiles) > 4
+    )
+
+    return features
 
 
 def list_gcf(smiles: str) -> set[str]:
@@ -87,18 +127,7 @@ def list_gcf(smiles: str) -> set[str]:
     Returns:
         list[str]: List of generic cyclic features (with insaturations)
     """
-    subgraphs: set[str] = divide_subgraphs(smiles)
-
-    # computes smiles of rings features and remove unique atoms
-    # the length condition is to avoid computing the scaffold of subgraphs
-    # that are not cyclic (minimum length of the SMILES of a cycle is 5,
-    # as it is a cycle with 3 atoms and 2 numbers representing the ring closure
-    # , eg. C1CC1)
-    features: set[str] = set(
-        convert_to_carbon(smiles) for smiles in subgraphs if len(smiles) > 4
-    )
-
-    return features
+    return list_gcf_from_graph(MolecularGraph(smiles))
 
 
 class UnknownGCF(Evaluation):
@@ -133,7 +162,7 @@ class UnknownGCF(Evaluation):
     def _evaluate(self, molecule: Molecule) -> int:
         mol_graph = molecule.get_representation(MolecularGraph)
 
-        unique_features = list_gcf(mol_graph.canonical_smiles)
+        unique_features = list_gcf_from_graph(mol_graph)
 
         unknown_count = 0
         for feature in unique_features:

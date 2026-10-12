@@ -9,7 +9,6 @@ https://github.com/PatWalters/silly_walks
 
 import os
 
-from rdkit import Chem
 from rdkit.Chem import AllChem
 from typing_extensions import override
 
@@ -28,9 +27,7 @@ def list_ecfp(molecule: Molecule, radius: int = 2) -> list[int]:
     Returns:
         list[int]: list of ECFP fingerprints
     """
-    mol = Chem.MolFromSmiles(
-        molecule.get_representation(MolecularGraph).canonical_smiles
-    )
+    mol = molecule.get_representation(MolecularGraph).aromatic_mol
 
     fingerprints = list(
         AllChem.GetMorganGenerator(radius=radius)
@@ -38,7 +35,6 @@ def list_ecfp(molecule: Molecule, radius: int = 2) -> list[int]:
         .GetNonzeroElements()
         .keys()
     )
-
     return fingerprints
 
 
@@ -51,9 +47,9 @@ class UnknownECFP(Evaluation):
 
     def __init__(
         self,
-        path_db: str = os.path.join("external_data", "ecfp4_ChEMBL_ZINC.txt"),
+        path_db: str = os.path.join("external_data", "ecfp4_ChEMBL.txt"),
         radius: int = 2,
-        name: str = "chembl_zinc",
+        name: str = "chembl",
     ):
         """
         Init FilterECFP with the path to the reference database and the radius.
@@ -83,9 +79,8 @@ class UnknownECFP(Evaluation):
     @override
     def _evaluate(self, molecule: Molecule) -> int:
 
-        mol = Chem.MolFromSmiles(
-            molecule.get_representation(MolecularGraph).canonical_smiles
-        )
+        # sanitized (aromatic) mol, parsed once and cached on the representation
+        mol = molecule.get_representation(MolecularGraph).aromatic_mol
 
         # get the Morgan fingerprints
         fingerprints = self.fingerprints_generator.GetSparseCountFingerprint(

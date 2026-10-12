@@ -255,12 +255,34 @@ def atom_types_from_mol(mol: rdchem.Mol) -> list[str]:
     return [classify_atom(atom) for atom in kmol.GetAtoms()]
 
 
+ATOM_TYPES_KEY = "huckel_atom_types"
+
+
+def atom_types_of(molecule: Molecule) -> list[str]:
+    """Atom types of the molecule, computed once and cached on it.
+
+    Reads the MolecularGraph.mol directly: it is already kekulized by
+    update_representation, so no copy/re-kekulization is needed.
+    """
+    try:
+        return molecule.value(ATOM_TYPES_KEY)
+    except KeyError:
+        pass
+    mol = molecule.get_representation(MolecularGraph).mol
+    atom_types = [classify_atom(atom) for atom in mol.GetAtoms()]
+    molecule.set_value(ATOM_TYPES_KEY, atom_types)
+    return atom_types
+
+
 def total_pi_electrons(atom_types: list[str]) -> int:
     return sum(PI_ELECTRONS[t] for t in atom_types)
 
 
-def build_reduced_huckel_matrix(mol: rdchem.Mol) -> tuple[np.ndarray, list[str]]:
-    atom_types = atom_types_from_mol(mol)
+def build_reduced_huckel_matrix(
+    mol: rdchem.Mol, atom_types: list[str] | None = None
+) -> tuple[np.ndarray, list[str]]:
+    if atom_types is None:
+        atom_types = atom_types_from_mol(mol)
     n_atoms = mol.GetNumAtoms()
 
     if n_atoms == 0:
@@ -281,8 +303,12 @@ def build_reduced_huckel_matrix(mol: rdchem.Mol) -> tuple[np.ndarray, list[str]]
     return hmat, atom_types
 
 
-def solve_huckel_mol(mol: rdchem.Mol, beta_ev: float | None = None) -> HuckelResult:
-    hmat, atom_types = build_reduced_huckel_matrix(mol)
+def solve_huckel_mol(
+    mol: rdchem.Mol,
+    beta_ev: float | None = None,
+    atom_types: list[str] | None = None,
+) -> HuckelResult:
+    hmat, atom_types = build_reduced_huckel_matrix(mol, atom_types)
 
     eigenvalues, eigvecs = np.linalg.eigh(hmat)
 
@@ -368,7 +394,9 @@ class Huckel(Evaluation):
     @override
     def _evaluate(self, molecule: Molecule) -> HuckelResult:
         mol_graph = molecule.get_representation(MolecularGraph)
-        return solve_huckel_mol(mol_graph.mol, beta_ev=self.beta_ev)
+        return solve_huckel_mol(
+            mol_graph.mol, beta_ev=self.beta_ev, atom_types=atom_types_of(molecule)
+        )
 
 
 class HuckelHOMO(Evaluation):
@@ -464,65 +492,45 @@ class HuckelOrbitalLambda(Evaluation):
         return result.eigenvalues_lambda[idx]
 
 
-class HuckelOrbitalOverlap(Evaluation):
-    """Computes the orbital overlap Σₖ cₖ₁·cₖ₂ between two molecular orbitals.
+class HuckelCompatible(Evaluation):
+    """Filter: raises EvaluationError if the molecule is not compatible with
+    the Hückel model.
 
-    Orthogonal orbitals return 0. Identical orbitals return 1 (normalised).
-    selector1, selector2: "HOMO", "LUMO", "HOMO-1", "LUMO+2", or integer index.
+    A molecule is compatible when:
+    - Every atom is supported by classify_atom (B, C, N, O, S, P, F, Cl, Br).
+    - sp3 carbons (C2 type, no π bond) are only allowed as terminal atoms
+      (graph degree == 1), i.e. at most one sp3 carbon per chain end.
+    - The molecule has at least one atom that contributes a pz orbital (non-C2).
     """
 
-    def __init__(
-        self,
-        selector1: MOSelector = "HOMO",
-        selector2: MOSelector = "LUMO",
-    ) -> None:
-        super().__init__(f"huckel_overlap_{selector1}_{selector2}")
-        self.selector1 = selector1
-        self.selector2 = selector2
+    def __init__(self) -> None:
+        super().__init__("huckel_compatible")
 
     @override
-    def _evaluate(self, molecule: Molecule) -> float:
-        result: HuckelResult = molecule.value("huckel")
-        idx1 = resolve_mo_index(result, self.selector1)
-        idx2 = resolve_mo_index(result, self.selector2)
-        c1 = np.array(result.eigenvectors[idx1])
-        c2 = np.array(result.eigenvectors[idx2])
-        return float(np.dot(c1, c2))
+    def _evaluate(self, molecule: Molecule) -> bool:
+        mol_graph = molecule.get_representation(MolecularGraph)
+        # mol_graph.mol is already kekulized (update_representation);
+        # classify_atom raises EvaluationError for unsupported atom types.
+        atom_types = atom_types_of(molecule)
 
+        has_pi_atom = False
+        for atom, atype in zip(mol_graph.mol.GetAtoms(), atom_types):
+            if atype == "C2":
+                if atom.GetDegree() != 1:
+                    raise EvaluationError(
+                        f"sp3 carbon (C2) at index {atom.GetIdx()} is not terminal "
+                        f"(degree {atom.GetDegree()}): only one sp3 carbon per chain end is allowed"
+                    )
+            else:
+                has_pi_atom = True
 
-class HuckelOrbitalCombination(Evaluation):
-    """Linear combination of orbital densities summed over all atoms.
+        if not has_pi_atom:
+            raise EvaluationError(
+                "Molecule has no π system: all carbons are sp3 (C2), "
+                "which is incompatible with the Hückel model"
+            )
 
-    For each (selector, sign, coeff) term, computes:
-        combined[k] = Σᵢ (sign_i · coeff_i · cₖᵢ²)   for each atom k
-
-    Returns the scalar Σₖ combined[k].
-
-    Example — HOMO minus LUMO density:
-        HuckelOrbitalCombination([("HOMO", +1, 1.0), ("LUMO", -1, 1.0)])
-    """
-
-    def __init__(
-        self,
-        terms: list[tuple[MOSelector, float, float]],
-        name: str | None = None,
-    ) -> None:
-        if name is None:
-            parts = [f"{'p' if s >= 0 else 'm'}{abs(c):.2g}{sel}" for sel, s, c in terms]
-            name = "huckel_combination_" + "_".join(parts)
-        super().__init__(name)
-        self.terms = terms
-
-    @override
-    def _evaluate(self, molecule: Molecule) -> float:
-        result: HuckelResult = molecule.value("huckel")
-        n_atoms = len(result.atom_types)
-        combined = np.zeros(n_atoms)
-        for selector, sign, coeff in self.terms:
-            idx = resolve_mo_index(result, selector)
-            coeffs = np.array(result.eigenvectors[idx])
-            combined += sign * coeff * coeffs ** 2
-        return float(np.sum(combined))
+        return True
 
 
 class HuckelOrbitalLambdaOverlap(Evaluation):

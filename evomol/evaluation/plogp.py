@@ -23,5 +23,4 @@ def penalized_log_p(molecule: Molecule) -> float:
     return n_log_p + n_sa_score + n_cycle_score
 
 
-PLogP = Function("PLogP", penalized_log_p, -0.0094)
-PLogP_Max = Function("PLogP_Max", penalized_log_p, 0.0833)
+PLogP = Function("PLogP", penalized_log_p)

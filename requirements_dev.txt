@@ -1,4 +1,4 @@
-rdkit==2025.9.3
+rdkit==2024.3.5
 networkx>=3.2
 typing_extensions>=4.12
 typer>=0.12
@@ -9,11 +9,6 @@ pillow>=10.4.0
 matplotlib>=3.9
 cairosvg>=2.7.1
 joblib>=1.4.2
-python-Levenshtein>=0.27.1
-minizinc>=0.10.0
-xarray>=2025.10.1
-tqdm>=4.67.1
-scipy>=1.16.2
 tox
 coverage
 Sphinx
@@ -26,5 +21,3 @@ flake8
 isort
 pytest
 furo
-plottable
-seaborn

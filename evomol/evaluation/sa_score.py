@@ -9,7 +9,12 @@ Journal of Cheminformatics 1, no 1 (10 juin 2009): 8.
 https://doi.org/10.1186/1758-2946-1-8.
 """
 
-from rdkit.Contrib.SA_Score import sascorer
+try:
+    from rdkit.Contrib.SA_Score import sascorer
+except ModuleNotFoundError:
+    sascorer = None
+
+from rdkit import rdBase
 
 from evomol.evaluation.evaluation import Function
 from evomol.representation import MolecularGraph, Molecule
@@ -33,7 +38,19 @@ def sa_score(molecule: Molecule) -> float:
     if mol_graph.canonical_smiles == "":
         return 1
 
-    sa_score_value: float = sascorer.calculateScore(mol_graph.mol)
+    # WARNING — differs from the original EvoMol (RevoMol-correlation), which
+    # computes the score on mol_graph.mol, the kekulized working graph.
+    # Here it is computed on the aromatic mol (mol_graph.aromatic_mol), as
+    # sascorer expects. Only aromatic molecules are affected, and strongly:
+    # benzene 2.52 -> 1.00, pyridine 3.83 -> 1.37, naphthalene 3.49 -> 1.00,
+    # paracetamol 3.29 -> 1.41 (non-aromatic: C=CC=CC, CCO unchanged).
+    # SAScore values (and NormalizedSAScore, ZincNormalizedSAScore, PLogP)
+    # are therefore not comparable with runs made with the original code.
+
+    # sascorer (RDKit Contrib) uses the deprecated GetMorganFingerprint:
+    # block the "DEPRECATION WARNING: please use MorganGenerator" message
+    with rdBase.BlockLogs():
+        sa_score_value: float = sascorer.calculateScore(mol_graph.aromatic_mol)
 
     return sa_score_value
 
@@ -76,7 +93,7 @@ def zinc_normalized_sa_score(molecule: Molecule) -> float:
     return zinc_normalized_sa_score_value
 
 
-SAScore = Function("SAScore", sa_score, -0.1)
+SAScore = Function("SAScore", sa_score)
 
 
 NormalizedSAScore = Function("NormalizedSAScore", normalized_sa_score)

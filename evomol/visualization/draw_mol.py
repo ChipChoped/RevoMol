@@ -115,9 +115,6 @@ def draw_multiple_svgs_in_matplotlib(
     svgs: list[str],
     show: bool = True,
     save_to_path: str = "",
-    title: str|None = None,
-    labels: list[str] | None = None,
-    label_info: str|None = None,
 ) -> None:
     """Display multiple SVG images in a matplotlib figure.
 
@@ -127,7 +124,6 @@ def draw_multiple_svgs_in_matplotlib(
             Defaults to True.
         save_to_path (str, optional): Path to save the image.
             Defaults to "".
-        title (str, optional): Title of the image. Defaults to None.
     """
     # convert each SVG to PNG using cairosvg
     png_datas = [
@@ -138,30 +134,22 @@ def draw_multiple_svgs_in_matplotlib(
     # set the number of columns and rows for the subplots
     num_images = len(png_datas)
     # 3 columns maximum
-    cols = min(5, num_images)
+    cols = min(3, num_images)
     rows = (num_images + cols - 1) // cols
 
     # create a figure with subplots
-    fig, axes = plt.subplots(rows, cols, figsize=(cols * 5, rows * 5))
-    fig.suptitle(title, fontsize=20)
+    fig, axes = plt.subplots(
+        rows, cols, figsize=(cols * 5, rows * 5), squeeze=False
+    )
 
     # display each image in a subplot
     for image, ax in zip(png_datas, axes.flat):
-        # ax.set_title("Step " + str(step), fontsize=18)
         ax.imshow(image)
-        ax.set_frame_on(False)
-        ax.set_xticks([])
-        ax.set_yticks([])
-
-    if labels is not None:
-        for label, ax, step in zip(labels, axes.flat, range(num_images)):
-            ax.set_xlabel("Step " + str(step) + "\n" + label_info + " = " + str(round(float(label), 4)), fontsize=18)
+        ax.axis("off")
 
     # remove the axis for the empty subplots
     for j in range(len(png_datas), len(axes.flat)):
-        axes.flat[j].set_frame_on(False)
-        axes.flat[j].set_xticks([])
-        axes.flat[j].set_yticks([])
+        axes.flat[j].axis("off")
 
     plt.tight_layout()
     if show:

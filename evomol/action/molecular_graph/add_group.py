@@ -1,9 +1,12 @@
 """
 Add a group of atoms to the molecular graph.
+Only the groups whose atoms all belong to Molecule.accepted_atoms are added.
 """
 
 from dataclasses import dataclass
+from functools import lru_cache
 
+from rdkit import Chem
 from typing_extensions import override
 
 from evomol.action import Action
@@ -21,6 +24,15 @@ class Group:
     smiles: str
     nb_atoms: int
     positions_to_link: list[int]
+
+
+@lru_cache(maxsize=None)
+def _group_atoms(smiles: str) -> frozenset[str]:
+    """Return the set of atom symbols of a group SMILES."""
+    return frozenset(
+        atom.GetSymbol()
+        for atom in Chem.MolFromSmiles(smiles, sanitize=False).GetAtoms()
+    )
 
 
 class AddGroupMG(ActionMolGraph):
@@ -93,11 +105,18 @@ class AddGroupMG(ActionMolGraph):
         if mol_graph.nb_atoms >= Molecule.max_heavy_atoms:
             return []
 
-        # if the molecule is empty, we can add any group
+        # only the groups made of accepted atoms (e.g. no thiophene or
+        # sulfonic acid when S is not accepted)
+        accepted_atoms = set(Molecule.accepted_atoms)
+        groups = [
+            group for group in cls.groups if _group_atoms(group.smiles) <= accepted_atoms
+        ]
+
+        # if the molecule is empty, we can add any accepted group
         if mol_graph.nb_atoms == 0:
             return [
                 AddGroupMG(molecule, 0, group.smiles, position)
-                for group in cls.groups
+                for group in groups
                 for position in group.positions_to_link
             ]
 
@@ -112,7 +131,7 @@ class AddGroupMG(ActionMolGraph):
             for atom_idx in range(mol_graph.nb_atoms)
             if implicit_valences[atom_idx] > 0
             and not mol_graph.atom_charged_or_radical(atom_idx)
-            for group in cls.groups
+            for group in groups
             if mol_graph.nb_atoms + group.nb_atoms <= Molecule.max_heavy_atoms
             for position in group.positions_to_link
         ]
