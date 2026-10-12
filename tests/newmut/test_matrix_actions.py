@@ -11,6 +11,8 @@ import pytest
 from evomol import default_parameters as dp
 from evomol.action import Action
 from evomol.newmut.append_atom_rule import AppendAtomRuleMG
+from evomol.newmut.aromatize import AromatizeMG
+from evomol.newmut.flip_path import FlipAlternatingPathMG
 from evomol.newmut.matrix_rules import result_is_allowed
 from evomol.newmut.substitute_shift import SubstituteShiftMG
 from evomol.representation import MolecularGraph, Molecule
@@ -40,7 +42,12 @@ MOLECULES = [
     "c1ccc2c(c1)ccc1ccccc12",
 ]
 
-RULE_ACTIONS: list[type[Action]] = [AppendAtomRuleMG, SubstituteShiftMG]
+RULE_ACTIONS: list[type[Action]] = [
+    AppendAtomRuleMG,
+    SubstituteShiftMG,
+    FlipAlternatingPathMG,
+    AromatizeMG,
+]
 
 
 @pytest.fixture(autouse=True, scope="module")
@@ -181,3 +188,72 @@ def test_substitute_shift_moves_hole() -> None:
     for smiles in produced:
         assert result_is_allowed(before, MolecularGraph(smiles))
     assert produced
+
+
+########################################
+#          FlipAlternatingPath
+########################################
+def test_flip_quinoid() -> None:
+    """Example of the specification: quinoid switch of 2,5-dimethylthiophene."""
+    assert canonical("C=C1C=CC(=C)S1") in results(FlipAlternatingPathMG, "CC1=CC=C(C)S1")
+
+
+def test_flip_butene() -> None:
+    """CC=CC: the only flip gives butadiene."""
+    assert results(FlipAlternatingPathMG, "CC=CC") == {canonical("C=CC=C")}
+
+
+def test_flip_refused() -> None:
+    """Benzene: every flip would give a carbon two double bonds."""
+    molecule = Molecule("c1ccccc1")
+    assert FlipAlternatingPathMG.list_unchecked_actions(molecule)
+    assert not FlipAlternatingPathMG.list_actions(molecule)
+
+
+def test_flip_path_alternates() -> None:
+    """Listed paths alternate 1, 2, ..., 1 and have at least 3 bonds."""
+    molecule = Molecule("CC=CC=CC")
+    mol_graph = molecule.get_representation(MolecularGraph)
+    for action in FlipAlternatingPathMG.list_unchecked_actions(molecule):
+        path = action.path
+        assert len(path) >= 4
+        orders = [mol_graph.bond_order(path[k], path[k + 1]) for k in range(len(path) - 1)]
+        assert orders == [1 if k % 2 == 0 else 2 for k in range(len(orders))]
+
+
+########################################
+#               Aromatize
+########################################
+def test_aromatize_dihydropyridine() -> None:
+    """1,4-dihydropyridine -> pyridine."""
+    assert results(AromatizeMG, "C1=CNC=CC1") == {canonical("c1ccncc1")}
+
+
+def test_aromatize_dihydroperylene() -> None:
+    """Dihydroperylene -> perylene, with at most 3 bond changes."""
+    actions = AromatizeMG.list_actions(Molecule("C(C=C1C=CC=C2C11)C=C1c1cccc3c1c2ccc3"))
+    assert len(actions) == 1
+    assert len(actions[0].bond_changes) <= 3
+    assert canonical(str(actions[0].apply())) == canonical(
+        "c1cc2cccc3c4cccc5cccc(c(c1)c23)c54"
+    )
+
+
+@pytest.mark.parametrize(
+    "smiles",
+    (
+        pytest.param("C1=CC=CC1", id="cyclopentadiene"),
+        pytest.param("c1ccccc1", id="benzene (already aromatic)"),
+        pytest.param("CCCC", id="no ring"),
+    ),
+)
+def test_aromatize_refused(smiles: str) -> None:
+    """No Kekulé structure, or nothing to change."""
+    assert not AromatizeMG.list_actions(Molecule(smiles))
+
+
+def test_aromatize_one_action_per_system() -> None:
+    """Two separate ring systems give at most one action each."""
+    actions = AromatizeMG.list_unchecked_actions(Molecule("C1=CCC=CC1CC1C=CCC=C1"))
+    assert len(actions) == 2
+    assert len({action.atom_idx for action in actions}) == 2
