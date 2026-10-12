@@ -10,9 +10,12 @@ import pytest
 
 from evomol import default_parameters as dp
 from evomol.action import Action
+from evomol.newmut.annelate import AnnelateMG
 from evomol.newmut.append_atom_rule import AppendAtomRuleMG
 from evomol.newmut.aromatize import AromatizeMG
 from evomol.newmut.flip_path import FlipAlternatingPathMG
+from evomol.newmut.fragments import parse_fragment
+from evomol.newmut.graft import GraftFragmentMG
 from evomol.newmut.matrix_rules import result_is_allowed
 from evomol.newmut.substitute_shift import SubstituteShiftMG
 from evomol.representation import MolecularGraph, Molecule
@@ -47,6 +50,8 @@ RULE_ACTIONS: list[type[Action]] = [
     SubstituteShiftMG,
     FlipAlternatingPathMG,
     AromatizeMG,
+    GraftFragmentMG,
+    AnnelateMG,
 ]
 
 
@@ -257,3 +262,97 @@ def test_aromatize_one_action_per_system() -> None:
     actions = AromatizeMG.list_unchecked_actions(Molecule("C1=CCC=CC1CC1C=CCC=C1"))
     assert len(actions) == 2
     assert len({action.atom_idx for action in actions}) == 2
+
+
+########################################
+#               Fragments
+########################################
+def test_parse_fragment() -> None:
+    """Attachment atoms found in the fragment without its dummy atoms."""
+    phenyl = parse_fragment("C1=CC=C(C=C1)[*:1]")
+    assert phenyl.nb_atoms == 6
+    assert len(phenyl.attach) == 1
+    thieno = parse_fragment("[*:1]C=CS[*:2]")
+    assert thieno.nb_atoms == 3
+    assert not thieno.symmetric
+    assert parse_fragment("[*:1]C=CC=C[*:2]").symmetric
+
+
+def test_parse_fragment_errors() -> None:
+    """Badly numbered attachment points are refused."""
+    with pytest.raises(ValueError):
+        parse_fragment("C=C[*:2]")
+
+
+########################################
+#             GraftFragment
+########################################
+def test_graft_thiophene() -> None:
+    """Thiophene -> 2-vinylthiophene (example of reference_app.js)."""
+    assert canonical("C=CC1=CC=CS1") in results(GraftFragmentMG, "C1=CSC=C1")
+
+
+def test_graft_size_limit() -> None:
+    """No graft beyond Molecule.max_heavy_atoms."""
+    try:
+        dp.setup_default_parameters(accepted_atoms=["C", "O", "N", "F", "S"], max_heavy_atoms=7)
+        names = {a.name for a in GraftFragmentMG.list_actions(Molecule("c1ccsc1"))}
+        assert "vinyl" in names
+        assert "phenyl" not in names
+    finally:
+        dp.setup_default_parameters(accepted_atoms=["C", "O", "N", "F", "S"], max_heavy_atoms=38)
+
+
+def test_graft_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An ethyl graft (other vocabulary) creates two bonded s carbons."""
+    monkeypatch.setattr(GraftFragmentMG, "fragments", {"ethyl": "CC[*:1]"})
+    molecule = Molecule("c1ccccc1")
+    assert GraftFragmentMG.list_unchecked_actions(molecule)
+    assert not GraftFragmentMG.list_actions(molecule)
+
+
+def test_graft_accepted_atoms() -> None:
+    """Fragments with an element not accepted are not used."""
+    try:
+        dp.setup_default_parameters(accepted_atoms=["C"], max_heavy_atoms=38)
+        names = {a.name for a in GraftFragmentMG.list_actions(Molecule("c1ccccc1"))}
+        assert names == {"vinyl", "ethynyl", "phenyl"}
+    finally:
+        dp.setup_default_parameters(accepted_atoms=["C", "O", "N", "F", "S"], max_heavy_atoms=38)
+
+
+########################################
+#                Annelate
+########################################
+def test_annelate_thiophene() -> None:
+    """Thiophene -> benzo[b]thiophene and benzo[c]thiophene (examples of
+    reference_app.js)."""
+    produced = results(AnnelateMG, "C1=CSC=C1")
+    assert canonical("C1=CC2=C(C=C1)SC=C2") in produced
+    assert canonical("C1=CC2=CSC=C2C=C1") in produced
+
+
+def test_annelate_orientations() -> None:
+    """Both orientations of an asymmetric fragment, one of a symmetric one."""
+    actions = AnnelateMG.list_unchecked_actions(Molecule("C=C"))
+    benzo = [(a.atom1, a.atom2) for a in actions if a.name == "benzo"]
+    thieno = [(a.atom1, a.atom2) for a in actions if a.name == "thieno"]
+    assert benzo == [(0, 1)]
+    assert sorted(thieno) == [(0, 1), (1, 0)]
+
+
+def test_annelate_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A propano bridge (other vocabulary) on ethylene gives cyclopentene,
+    whose middle CH2 is bonded to two s carbons: refused. An ethano bridge
+    gives cyclobutene, allowed (each CH2 has an sp2 neighbour)."""
+    monkeypatch.setattr(
+        AnnelateMG,
+        "fragments",
+        {"propano": "[*:1]CCC[*:2]", "ethano": "[*:1]CC[*:2]"},
+    )
+    molecule = Molecule("C=C")
+    assert {a.name for a in AnnelateMG.list_unchecked_actions(molecule)} == {
+        "propano",
+        "ethano",
+    }
+    assert results(AnnelateMG, "C=C") == {canonical("C1=CCC1")}
