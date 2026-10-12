@@ -45,6 +45,13 @@ déjà hors règles reste donc modifiable.
 | `FlipAlternatingPathMG` | `flip_path.py` | inversion 1 ↔ 2 du plus court chemin alterné 1, 2, …, 1 entre deux atomes (bascule quinoïde) |
 | `AromatizeMG` | `aromatize.py` | structure de Kekulé d'un système de cycles, avec le moins de liaisons changées |
 
+Nommer l'opération faite entre deux molécules (greffe, annélation, insertion, inversion, réécriture de Kekulé…) :
+`matrix_diff.classify_mutation(avant, après)` ou `matrix_diff.classify_action(action)`, port de `mcs`, `diff` et
+`classify` de `reference_core.js` (mêmes alignements que le JS, vérifiés avec node sur 9 paires). L'aromaticité vient de
+RDKit, en ne comptant pas aromatique un cycle dont un atome porte une double liaison exocyclique (formes quinoïdes),
+pour se rapprocher d'OpenChemLib. L'alignement est cherché dans les deux sens et le meilleur est gardé. Outil
+d'analyse seulement : l'algorithme ne s'en sert pas.
+
 Vocabulaire par défaut (`fragments.py`) : greffes vinyl, éthynyl, phényl, thién-2-yl, dicyanovinyl, diméthylamino,
 méthoxy, cyano ; annélations benzo, thiéno. Un fragment dont un élément n'est pas dans les atomes acceptés n'est pas
 utilisé (avec C, O, N seulement : ni thiényl ni thiéno).

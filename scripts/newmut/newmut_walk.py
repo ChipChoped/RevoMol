@@ -14,7 +14,9 @@ Essai à la main, sur l'espace d'action configuré par configure(CONFIG) :
   - mutation_table(smiles, type) / show_mutations(smiles, type) : toutes les mutations d'un type, en tableau ou en
     dessins (vert : permise, rouge : refusée par les règles, avec la règle) ;
   - apply_mutation(smiles, type, n) : applique la mutation n et montre ce qui a changé ; renvoie le nouveau SMILES ;
-  - random_mutations(smiles, ...) : tirage au hasard comme l'algorithme évolutionnaire.
+  - random_mutations(smiles, ...) : tirage au hasard comme l'algorithme évolutionnaire ;
+  - walk_operations(out_dir, marche, début, fin) : nom de l'opération faite à chaque pas d'une marche
+    (evomol/newmut/matrix_diff.py, port de classify de l'atelier de mutations).
 """
 
 from __future__ import annotations
@@ -44,6 +46,7 @@ from evomol import default_parameters as dp
 from evomol.action import Action
 from evomol.evaluation import Evaluation
 from evomol.newmut import matrix_rules as mr
+from evomol.newmut.matrix_diff import classify_action, classify_mutation, operation_names
 from evomol.newmut import rule_filtered as rf
 from evomol.newmut.default_parameters import setup_newmut_action_space
 from evomol.newmut.neighborhood_strategy import draw_allowed_action
@@ -369,6 +372,7 @@ def apply_mutation(smiles: str, action_type: str, number: int, size: tuple[int, 
     types_b, matrix_b = mr.to_matrix(before)
     types_a, matrix_a = mr.to_matrix(after)
     print(f"{describe(row['action'])}")
+    print(f"  opération : {' + '.join(operation_names(classify_action(row['action']))) or 'aucune'}")
     if len(types_a) >= len(types_b):
         for i in range(len(types_b)):
             if types_a[i] != types_b[i]:
@@ -424,3 +428,17 @@ def random_mutations(smiles: str, n_mutations: int = 1, lazy_rules: bool = False
             random.setstate(rng_state)
     display(Draw.MolsToGridImage(mols, molsPerRow=per_row, subImgSize=size, legends=legends))
     return str(molecule)
+
+
+def walk_operations(out_dir: str, walk: int, start: int, stop: int) -> pd.DataFrame:
+    """Pour chaque pas start … stop (inclus) d'une marche : type de mutation tiré et nom de l'opération lue sur
+    les deux matrices (alignement automatique des atomes, comme l'atelier de mutations)."""
+    table = load_walks(out_dir)[walk]
+    table = table[(table.step >= max(start, 1) - 1) & (table.step <= stop)].reset_index(drop=True)
+    rows = []
+    for k in range(1, len(table)):
+        before, after = table.smiles[k - 1], table.smiles[k]
+        names = operation_names(classify_mutation(before, after)) if isinstance(after, str) else []
+        rows.append({"pas": int(table.step[k]), "mutation": table.action[k],
+                     "opération": " + ".join(names) or "aucune (même molécule)", "avant": before, "après": after})
+    return pd.DataFrame(rows)
