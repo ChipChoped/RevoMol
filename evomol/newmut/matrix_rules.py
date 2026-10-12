@@ -126,15 +126,14 @@ def to_matrix(mol_graph: MolecularGraph) -> tuple[list[str], np.ndarray]:
 
     The molecular graph is kekulized, so the bond orders are integers.
     """
-    types = [atom.GetSymbol() for atom in mol_graph.mol.GetAtoms()]
-    n = len(types)
+    mol = mol_graph.mol
+    n = mol.GetNumAtoms()
+    types = [mol.GetAtomWithIdx(i).GetSymbol() for i in range(n)]
     if n == 0:
         return types, np.zeros((0, 0), dtype=np.int64)
-    matrix = np.asarray(
-        Chem.GetAdjacencyMatrix(mol_graph.mol, useBO=True), dtype=np.int64
-    ).copy()
-    for i, element in enumerate(types):
-        matrix[i, i] = VALENCE_ELECTRONS.get(element, 0)
+    matrix = np.asarray(Chem.GetAdjacencyMatrix(mol, useBO=True), dtype=np.int64)
+    diagonal = np.arange(n)
+    matrix[diagonal, diagonal] = [VALENCE_ELECTRONS.get(element, 0) for element in types]
     return types, matrix
 
 
@@ -171,27 +170,60 @@ def from_matrix(types: Sequence[str], matrix: np.ndarray) -> MolecularGraph:
 class _Graph:
     """Adjacency lists and bond orders read once from a matrix."""
 
-    __slots__ = ("types", "n", "order", "adj")
+    __slots__ = ("types", "n", "order", "adj", "sums", "multiple")
 
     def __init__(self, types: Sequence[str], matrix: np.ndarray | list[list[int]]):
         self.types: list[str] = list(types)
-        rows = matrix.tolist() if isinstance(matrix, np.ndarray) else matrix
+        n = len(self.types)
+        rows = np.array(matrix, dtype=np.int64).reshape(n, n)
         self.n: int = len(rows)
-        self.order: list[list[int]] = [
-            [0 if i == j else int(rows[i][j]) for j in range(self.n)]
-            for i in range(self.n)
-        ]
-        self.adj: list[list[int]] = [
-            [j for j in range(self.n) if self.order[i][j]] for i in range(self.n)
-        ]
+        np.fill_diagonal(rows, 0)
+        self.order: list[list[int]] = rows.tolist()
+        self.adj: list[list[int]] = [np.flatnonzero(row).tolist() for row in rows]
+        self.sums: list[int] = rows.sum(axis=1).tolist()
+        self.multiple: list[bool] = (rows >= 2).any(axis=1).tolist()
 
     def bond_sum(self, i: int) -> int:
         """Sum of the row of atom i, off the diagonal."""
-        return sum(self.order[i])
+        return self.sums[i]
 
     def has_multiple(self, i: int) -> bool:
         """True if atom i has a double or triple bond."""
-        return any(self.order[i][j] >= 2 for j in self.adj[i])
+        return self.multiple[i]
+
+    def bridges(self) -> set[tuple[int, int]]:
+        """Bonds (i < j) that lie on no cycle (iterative Tarjan)."""
+        bridges: set[tuple[int, int]] = set()
+        index = [-1] * self.n
+        low = [0] * self.n
+        counter = 0
+        for root in range(self.n):
+            if index[root] != -1:
+                continue
+            index[root] = low[root] = counter
+            counter += 1
+            stack = [(root, -1, iter(self.adj[root]))]
+            while stack:
+                u, parent, neighbours = stack[-1]
+                advanced = False
+                for v in neighbours:
+                    if v == parent:
+                        continue
+                    if index[v] == -1:
+                        index[v] = low[v] = counter
+                        counter += 1
+                        stack.append((v, u, iter(self.adj[v])))
+                        advanced = True
+                        break
+                    low[u] = min(low[u], index[v])
+                if advanced:
+                    continue
+                stack.pop()
+                if parent != -1:
+                    low[parent] = min(low[parent], low[u])
+                    if low[u] > index[parent]:
+                        bridges.add((min(u, parent), max(u, parent)))
+        return bridges
 
     def connected_without(self, x: int, y: int) -> bool:
         """True if x and y stay connected once the bond x-y is removed."""
@@ -231,15 +263,23 @@ class _Graph:
         closed by the bond. The ring is the ordered list of its atoms.
         """
         rings: dict[frozenset[int], list[int]] = {}
+        # A bridge bond lies on no cycle, and a shortest path between the two
+        # atoms of a ring bond never crosses a bridge: the search only follows
+        # ring bonds (same paths, fewer atoms visited).
+        bridges = self.bridges()
+        ring_adj = [
+            [v for v in self.adj[u] if (min(u, v), max(u, v)) not in bridges]
+            for u in range(self.n)
+        ]
         for a in range(self.n):
-            for b in self.adj[a]:
+            for b in ring_adj[a]:
                 if b < a:
                     continue
                 prev: dict[int, int | None] = {a: None}
                 queue = deque([a])
                 while queue and b not in prev:
                     u = queue.popleft()
-                    for v in self.adj[u]:
+                    for v in ring_adj[u]:
                         if u == a and v == b:
                             continue
                         if v not in prev:
