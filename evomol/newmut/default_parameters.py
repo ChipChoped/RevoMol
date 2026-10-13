@@ -18,6 +18,7 @@ from evomol.newmut.aromatize import AromatizeMG
 from evomol.newmut.flip_path import FlipAlternatingPathMG
 from evomol.newmut.fragments import ANNELATION_FRAGMENTS, GRAFT_FRAGMENTS, parse_fragment
 from evomol.newmut.graft import GraftFragmentMG
+from evomol.newmut.insert_carbon_double import InsertCarbonDoubleMG
 from evomol.newmut.substitute_shift import SubstituteShiftMG
 from evomol.representation import MolecularGraph
 
@@ -50,6 +51,7 @@ def setup_newmut_action_space(
     aromatize: bool = False,
     graft_fragments: dict[str, str] | None = None,
     annelation_fragments: dict[str, str] | None = None,
+    insert_carbon_keep_double: bool = False,
 ) -> None:
     """Set the action space of evomol with the new mutations.
 
@@ -71,6 +73,10 @@ def setup_newmut_action_space(
         annelation_fragments: vocabulary of AnnelateMG, name -> SMILES with
             two attachment points [*:1] and [*:2]. None:
             fragments.ANNELATION_FRAGMENTS.
+        insert_carbon_keep_double: InsertCarbonDoubleMG replaces
+            InsertCarbonMG: a carbon inserted into a double bond keeps one
+            double bond (a=C-b and a-C=b instead of a-C-b). False: original
+            behaviour.
 
     With all the new options left to False, the action space is the one of
     setup_default_action_space.
@@ -115,6 +121,8 @@ def setup_newmut_action_space(
         space = _replace(space, mg.AddAtomMG, AppendAtomRuleMG)
     if substitution_shift:
         space = _replace(space, mg.SubstituteAtomMG, SubstituteShiftMG)
+    if insert_carbon_keep_double and mg.InsertCarbonMG in space:
+        space = _replace(space, mg.InsertCarbonMG, InsertCarbonDoubleMG)
     if matrix_rules:
         # the new actions already apply the rules: returned unchanged
         space = [rf.rule_filtered(action) for action in space]  # type: ignore[arg-type]

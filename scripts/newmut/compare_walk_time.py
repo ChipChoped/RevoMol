@@ -45,7 +45,8 @@ from random_walk_core import random_walk
 
 OUT = Path("notebooks/random_walk/results/newmut_walk/compare_time")
 
-NEW_OPTIONS = ["MATRIX_RULES", "APPEND_ATOM_RULE", "SUBSTITUTION_SHIFT", "GRAFT", "ANNELATE", "FLIP_PATH", "AROMATIZE"]
+NEW_OPTIONS = ["MATRIX_RULES", "APPEND_ATOM_RULE", "SUBSTITUTION_SHIFT", "GRAFT", "ANNELATE", "FLIP_PATH", "AROMATIZE",
+               "INSERT_CARBON_KEEP_DOUBLE"]
 BASE = {
     "START": "c1ccccc1", "BURN_IN_STEPS": 0, "MAX_ATOMS": 38, "ACCEPTED_ATOMS": ["C", "O", "N"],
     "ONLY_VALID": True, "UNIFORM_ACTION_TYPE": True, "EXCLUDE_CURRENT": True,

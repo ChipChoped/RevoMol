@@ -82,6 +82,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "AROMATIZE": True,             # AromatizeMG
     "GRAFT_FRAGMENTS": None,       # None : vocabulaire par défaut (evomol/newmut/fragments.py)
     "ANNELATION_FRAGMENTS": None,  # None : vocabulaire par défaut
+    "INSERT_CARBON_KEEP_DOUBLE": True,  # carbone inséré dans C=C : C=C-C et C-C=C (False : deux simples)
 }
 
 # couleurs des atomes modifiés dans les dessins
@@ -127,6 +128,7 @@ def configure(config: dict[str, Any]) -> tuple[list[Evaluation], dict[str, Any]]
         substitution_shift=config["SUBSTITUTION_SHIFT"], graft=config["GRAFT"], annelate=config["ANNELATE"],
         flip_path=config["FLIP_PATH"], aromatize=config["AROMATIZE"],
         graft_fragments=config["GRAFT_FRAGMENTS"], annelation_fragments=config["ANNELATION_FRAGMENTS"],
+        insert_carbon_keep_double=config.get("INSERT_CARBON_KEEP_DOUBLE", False),
     )
     key = (config["FILTER_HUCKEL"], config["MAX_SP3"], config["FILTER_REALISM"],
            config["FILTER_HETERO"], config["MAX_RING_N"])
@@ -142,7 +144,8 @@ def configure(config: dict[str, Any]) -> tuple[list[Evaluation], dict[str, Any]]
         "exclude_current": config["EXCLUDE_CURRENT"],
         # random_walk compare le type des actions listées : une mutation enveloppée par les règles liste des
         # actions de la classe d'origine
-        "action_types": [getattr(a, "inner_class", a) for a in selected] if selected else None,
+        "action_types": [getattr(a, "instance_class", getattr(a, "inner_class", a)) for a in selected]
+        if selected else None,
     }
     return _FILTERS[key], walk_kwargs
 
@@ -242,7 +245,8 @@ def describe(action: Action) -> str:
     if name == "CutAtomMG":
         return f"excision de {lab(a.atom_to_cut)}, {lab(a.atom1_to_bond)}–{lab(a.atom2_to_bond)} ordre {a.bond_type}"
     if name == "InsertCarbonMG":
-        return f"C inséré dans {lab(a.atom1_idx_to_bond)}–{lab(a.atom2_idx_to_bond)}"
+        left, right = bond[a.bond_to_1] or "–", bond[a.bond_to_2] or "–"
+        return f"C inséré : {lab(a.atom1_idx_to_bond)}{left}C{right}{lab(a.atom2_idx_to_bond)}"
     if name == "MoveGroupMG":
         return (f"groupe de {lab(a.atom_moving)} détaché de {lab(a.atom_staying)}, "
                 f"relié à {lab(a.atom_to_link)}")

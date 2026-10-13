@@ -38,6 +38,10 @@ from evomol.representation import MolecularGraph
 # False: original check (RDKit copy and full recomputation) everywhere
 FAST_RULES = True
 
+# True: on a molecule without any violation, the actions that surely create one
+# are refused without being checked (ParentRules.surely_refused). Same answer.
+PREFILTERS = True
+
 # parents whose rules are kept in memory
 CACHE_SIZE = 2_000
 _parents: OrderedDict[Hashable, ParentRules] = OrderedDict()
@@ -85,6 +89,82 @@ class ParentRules:
         self.nb_r1 = len(self.r1)
         self.charged = False  # set by parent_rules: charged or radical atom
         self.nb_rules = len(self.r2) + len(self.r3) + self.r4a + sum(self.r4b) + len(self.r5)
+        self._distances: dict[int, list[int]] = {}
+
+    def distance(self, a: int, b: int) -> int:
+        """Number of bonds on the shortest path between a and b (-1: not connected)."""
+        if a not in self._distances:
+            dist = [-1] * self.n
+            dist[a] = 0
+            frontier = [a]
+            while frontier:
+                following = []
+                for u in frontier:
+                    for v in self.graph.adj[u]:
+                        if dist[v] < 0:
+                            dist[v] = dist[u] + 1
+                            following.append(v)
+                frontier = following
+            self._distances[a] = dist
+        return self._distances[a][b]
+
+    def surely_refused(self, action: Action) -> bool:
+        """True if the action surely creates a violation, on a molecule that has
+        none (the count can only go up, so the action is refused):
+
+        A. a single bond created with an s carbon, between two atoms more than
+           mr.SMALL_RING - 1 bonds apart: the s carbon ends up in a large ring
+           (R4b, which refuses any s carbon in a large ring; if R4b changes, the
+           equivalence test of tests/newmut/test_fast_rules.py catches it);
+        C. a 4th heavy atom bonded by a single bond to an s carbon that already
+           carries 3 (R5): atom added, fragment grafted or fused, group moved,
+           bond created;
+        D. an alternating path inverted while one of its ends is a carbon that
+           already carries a double bond: that end gets a second one (R3);
+        E. a C=C outside any cycle, between two carbons that carry no other
+           double bond, made single: two bonded s carbons outside a cycle (R2).
+        """
+        # pylint: disable=import-outside-toplevel
+        from evomol.newmut.annelate import AnnelateMG
+        from evomol.newmut.flip_path import FlipAlternatingPathMG
+        from evomol.newmut.graft import GraftFragmentMG
+
+        if self.nb_r1 or self.nb_rules:
+            return False
+        graph = self.graph
+
+        def four_on_s(atom: int) -> bool:
+            return graph.is_s_carbon(atom) and len(graph.adj[atom]) == 3
+
+        if isinstance(action, mg.ChangeBondMG):
+            i, j = action.atom1, action.atom2
+            order = graph.order[i][j]
+            if order == 0 and action.bond_type == 1:
+                if (graph.is_s_carbon(i) or graph.is_s_carbon(j)) and self.distance(i, j) + 1 > mr.SMALL_RING:
+                    return True  # A
+                return four_on_s(i) or four_on_s(j)  # C
+            if order == 2 and action.bond_type == 1 and (min(i, j), max(i, j)) in self.bridges:
+                return (
+                    self.types[i] == "C" and self.types[j] == "C"
+                    and sum(graph.order[i][k] == 2 for k in graph.adj[i]) == 1
+                    and sum(graph.order[j][k] == 2 for k in graph.adj[j]) == 1
+                    and not any(graph.order[x][k] == 3 for x in (i, j) for k in graph.adj[x])
+                )  # E
+            return False
+        if isinstance(action, mg.AddAtomMG):
+            return self.n > 0 and action.bond_order == 1 and four_on_s(action.index_atom)  # C
+        if isinstance(action, GraftFragmentMG):
+            return four_on_s(action.anchor)  # C
+        if isinstance(action, AnnelateMG):
+            return four_on_s(action.atom1) or four_on_s(action.atom2)  # C
+        if isinstance(action, mg.MoveGroupMG):
+            return action.bond_type == 1 and four_on_s(action.atom_to_link)  # C
+        if isinstance(action, FlipAlternatingPathMG):
+            return any(
+                self.types[end] == "C" and any(graph.order[end][k] == 2 for k in graph.adj[end])
+                for end in (action.path[0], action.path[-1])
+            )  # D
+        return False
 
     def allowed_after(self, types: Sequence[str], matrix: np.ndarray, new_of_old: Sequence[int]) -> bool:
         """True if the state (types, matrix) creates no new violation.

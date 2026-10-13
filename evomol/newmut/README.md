@@ -45,6 +45,7 @@ déjà hors règles reste donc modifiable.
 | `AnnelateMG` | `annelate.py` | fusion d'un cycle sur une liaison (benzo, thiéno) |
 | `FlipAlternatingPathMG` | `flip_path.py` | inversion 1 ↔ 2 du plus court chemin alterné 1, 2, …, 1 entre deux atomes (bascule quinoïde) |
 | `AromatizeMG` | `aromatize.py` | structure de Kekulé d'un système de cycles, avec le moins de liaisons changées |
+| `InsertCarbonDoubleMG` | `insert_carbon_double.py` | option `insert_carbon_keep_double` : un carbone inséré dans une C=C garde une double d'un côté (C=C–C et C–C=C) au lieu de deux simples |
 
 Nommer l'opération faite entre deux molécules (greffe, annélation, insertion, inversion, réécriture de Kekulé…) :
 `matrix_diff.classify_mutation(avant, après)` ou `matrix_diff.classify_action(action)`, port de `mcs`, `diff` et
@@ -107,7 +108,14 @@ résultat, toutes les règles recalculées sur toute la molécule), mais :
 
 L'équivalence est testée sur toutes les mutations candidates de nombreuses molécules
 (`tests/newmut/test_fast_rules.py` ; 56 852 mutations sur 195 molécules sans aucun désaccord, le 2026-10-13).
-`fast_rules.FAST_RULES = False` revient à la vérification d'origine. Les listes filtrées sont aussi gardées en mémoire
+`fast_rules.FAST_RULES = False` revient à la vérification d'origine.
+
+Raccourcis exacts (`fast_rules.PREFILTERS = True`, par défaut) : sur une molécule qui respecte les règles, les
+mutations qui créent forcément une violation sont refusées sans être vérifiées. A : liaison simple créée avec un carbone
+`s` qui ferme un cycle de plus de 8 atomes (R4b) ; C : 4ᵉ atome lourd sur un carbone `s` qui en a déjà 3 (R5) ; D :
+inversion de chemin dont une extrémité est un carbone qui a déjà une double liaison (R3) ; E : C=C hors cycle passée en
+simple entre deux carbones sans autre double (R2). Même résultat (testé), vérification −16 %, voisinage complet −7 %
+(120 molécules de 5 à 98 atomes, 2026-10-14). Les listes filtrées sont aussi gardées en mémoire
 par molécule (`rule_filtered.CACHE_SIZE`, 10 000 molécules).
 
 `NewMutNeighborhoodStrategy(lazy_rules=True)` (désactivé par défaut) essaie les mutations du type tiré une par une,

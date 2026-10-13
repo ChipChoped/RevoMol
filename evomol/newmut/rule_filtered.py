@@ -96,6 +96,8 @@ def action_is_allowed(
         # charged or radical atoms: RDKit may refuse a result that the rules
         # accept, so the original check is kept
         if not parent.charged:
+            if fast_rules.PREFILTERS and parent.surely_refused(action):
+                return False
             effect = fast_rules.matrix_effect(action, parent.types, parent.matrix)
             if effect is not None:
                 return parent.allowed_after(*effect)

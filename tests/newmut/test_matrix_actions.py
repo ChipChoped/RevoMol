@@ -364,3 +364,31 @@ def test_r5_refuses_quaternary_carbon() -> None:
     actions = AppendAtomRuleMG.list_actions(molecule)
     assert not any(a.index_atom == 1 for a in actions)
     assert any(a.index_atom == 0 for a in actions)
+
+
+
+########################################
+#      InsertCarbon keeping a double
+########################################
+def test_insert_carbon_keep_double() -> None:
+    """A carbon inserted into C=C keeps a double bond on either side."""
+    from evomol.newmut.insert_carbon_double import InsertCarbonDoubleMG  # pylint: disable=import-outside-toplevel
+
+    actions = InsertCarbonDoubleMG.list_actions(Molecule("C=CC=C"))
+    orders = sorted((a.bond_to_1, a.bond_to_2) for a in actions if a.bond_to_1 + a.bond_to_2 > 2)
+    assert orders == [(1, 2), (1, 2), (2, 1), (2, 1)]
+    produced = {canonical(str(a.apply())) for a in actions}
+    assert canonical("C=CC=CC") in produced and canonical("C=CCC=C") in produced
+    # the single bonds keep the original insertion (two single bonds)
+    single = [a for a in actions if (a.atom1_idx_to_bond, a.atom2_idx_to_bond) in ((1, 2), (2, 1))]
+    assert [(a.bond_to_1, a.bond_to_2) for a in single] == [(1, 1)]
+    assert InsertCarbonDoubleMG.class_name() == "InsertCarbonMG"
+
+
+def test_insert_carbon_keep_double_benzene() -> None:
+    """Benzene: inserting into a double bond gives cycloheptatriene, allowed by the rules."""
+    from evomol.newmut import rule_filtered as rf  # pylint: disable=import-outside-toplevel
+    from evomol.newmut.insert_carbon_double import InsertCarbonDoubleMG  # pylint: disable=import-outside-toplevel
+
+    produced = results(rf.rule_filtered(InsertCarbonDoubleMG), "c1ccccc1")
+    assert canonical("C1=CC=CCC=C1") in produced

@@ -64,8 +64,36 @@ def random_molecules(n: int, length: int, seed: int) -> list[str]:
 @pytest.fixture(scope="module")
 def molecules() -> list[str]:
     """Fixed and random molecules."""
-    dp.setup_default_parameters(accepted_atoms=["C", "O", "N", "S"], max_heavy_atoms=38)
-    return FIXED + random_molecules(40, 25, seed=0)
+    dp.setup_default_parameters(accepted_atoms=["C", "O", "N", "S"], max_heavy_atoms=60)
+    return FIXED + random_molecules(40, 25, seed=0) + valid_molecules(25, 120, seed=1)
+
+
+def valid_molecules(n: int, length: int, seed: int) -> list[str]:
+    """Molecules reached by chains of random mutations that respect the rules
+    (they have no violation: the prefilters apply to them)."""
+    from evomol.newmut import matrix_rules as mr  # pylint: disable=import-outside-toplevel
+    from evomol.newmut.neighborhood_strategy import draw_allowed_action  # pylint: disable=import-outside-toplevel
+
+    setup_newmut_action_space(
+        matrix_rules=True, append_atom_rule=True, substitution_shift=True, graft=True,
+        annelate=True, flip_path=True, aromatize=True, insert_carbon_keep_double=True,
+    )
+    rng = random.Random(seed)
+    state = random.getstate()
+    random.seed(seed)
+    molecules = []
+    try:
+        for _ in range(n):
+            molecule = Molecule(rng.choice(["c1ccccc1", "C=CC=O", "c1ccncc1", "C=CC=CC=C"]))
+            for _ in range(rng.randint(5, length)):
+                action = draw_allowed_action(rng.choice(MolecularGraph.action_space), molecule)
+                if action is not None:
+                    molecule = action.apply()
+            if not mr.molecular_graph_violations(molecule.get_representation(MolecularGraph)):
+                molecules.append(str(molecule))
+    finally:
+        random.setstate(state)
+    return molecules
 
 
 def all_rule_classes() -> list[type[Action]]:
@@ -82,10 +110,13 @@ def all_rule_classes() -> list[type[Action]]:
         aromatize=True,
     )
     space = list(MolecularGraph.action_space)
-    setup_newmut_action_space(matrix_rules=True, append_atom_rule=True, substitution_shift=True)
+    setup_newmut_action_space(
+        matrix_rules=True, append_atom_rule=True, substitution_shift=True, insert_carbon_keep_double=True
+    )
     return space + [
-        action for action in MolecularGraph.action_space if action.class_name() in
-        ("AppendAtomRuleMG", "SubstituteShiftMG")
+        action for action in MolecularGraph.action_space
+        if action.class_name() in ("AppendAtomRuleMG", "SubstituteShiftMG")
+        or getattr(action, "inner_class", None).__name__ == "InsertCarbonDoubleMG"
     ]
 
 
@@ -131,3 +162,26 @@ def test_fast_is_used() -> None:
     for action_class in MolecularGraph.action_space:
         for action in action_class.list_actions(molecule):
             assert fast_rules.matrix_effect(action, parent.types, parent.matrix) is not None
+
+
+def test_prefilters_are_refusals(molecules: list[str]) -> None:
+    """Every action skipped by a prefilter is refused by the original check,
+    and the prefilters do skip actions on the molecules within the rules."""
+    nb_skipped = 0
+    for action_class in all_rule_classes():
+        for smiles in molecules:
+            molecule = Molecule(smiles)
+            fast_rules.clear_cache()
+            parent = fast_rules.parent_rules(molecule.get_representation(MolecularGraph))
+            if parent.charged:
+                continue
+            for action in action_class.list_unchecked_actions(molecule):  # type: ignore[attr-defined]
+                if not parent.surely_refused(action):
+                    continue
+                nb_skipped += 1
+                fast_rules.FAST_RULES = False
+                try:
+                    assert not action_class.action_is_allowed(action, molecule), (smiles, action)  # type: ignore[attr-defined]
+                finally:
+                    fast_rules.FAST_RULES = True
+    assert nb_skipped > 100
