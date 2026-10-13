@@ -356,3 +356,11 @@ def test_annelate_refused(monkeypatch: pytest.MonkeyPatch) -> None:
         "ethano",
     }
     assert results(AnnelateMG, "C=C") == {canonical("C1=CCC1")}
+
+
+def test_r5_refuses_quaternary_carbon() -> None:
+    """R5: no O added on the CH of cumene (it would carry 4 heavy atoms)."""
+    molecule = Molecule("CC(C)c1ccccc1")
+    actions = AppendAtomRuleMG.list_actions(molecule)
+    assert not any(a.index_atom == 1 for a in actions)
+    assert any(a.index_atom == 0 for a in actions)

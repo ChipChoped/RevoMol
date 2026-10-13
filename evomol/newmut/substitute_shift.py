@@ -20,7 +20,7 @@ the substitution and the bond changes.
 from __future__ import annotations
 
 from collections import deque
-from typing import Sequence
+from typing import Callable, Sequence
 
 import numpy as np
 from typing_extensions import override
@@ -33,6 +33,7 @@ from evomol.newmut.matrix_rules import (
     max_valence,
     to_matrix,
 )
+from evomol.newmut import fast_rules
 from evomol.newmut.rule_filtered import RuleCheckedMixin
 from evomol.representation import MolecularGraph, Molecule
 
@@ -115,16 +116,28 @@ def shift_states(
 
 
 def substitute_with_shift(
-    types: Sequence[str], matrix: np.ndarray, atom: int, element: str
+    types: Sequence[str],
+    matrix: np.ndarray,
+    atom: int,
+    element: str,
+    allowed: Callable[[list[str], np.ndarray], bool] | None = None,
 ) -> tuple[list[str], np.ndarray] | None:
     """First state (types, matrix) after the substitution that creates no new
-    violation, or None."""
+    violation, or None.
+
+    allowed(new_types, new_matrix): check of a state (same answer as
+    matrices_allowed against (types, matrix), which is the default).
+    """
     new_types = list(types)
     new_types[atom] = element
     for state in shift_states(types, matrix, atom, element):
         new_matrix = np.array(state, dtype=np.int64)
         new_matrix[atom, atom] = VALENCE_ELECTRONS.get(element, 0)
-        if matrices_allowed(types, matrix, new_types, new_matrix):
+        if (
+            allowed(new_types, new_matrix)
+            if allowed is not None
+            else matrices_allowed(types, matrix, new_types, new_matrix)
+        ):
             return new_types, new_matrix
     return None
 
@@ -201,6 +214,16 @@ class SubstituteShiftMG(RuleCheckedMixin, ActionMolGraph):
         mol_graph: MolecularGraph = molecule.get_representation(MolecularGraph)
         types, matrix = to_matrix(mol_graph)
 
+        # fast check of the candidate states (newmut.fast_rules), same answer
+        allowed = None
+        if fast_rules.FAST_RULES:
+            parent = fast_rules.parent_rules(mol_graph)
+            if not parent.charged:
+                identity = list(range(len(types)))
+
+                def allowed(new_types: list[str], new_matrix: np.ndarray) -> bool:
+                    return parent.allowed_after(new_types, new_matrix, identity)
+
         action_list: list[Action] = []
         for atom in range(len(types)):
             if mol_graph.atom_charged_or_radical(atom):
@@ -208,7 +231,7 @@ class SubstituteShiftMG(RuleCheckedMixin, ActionMolGraph):
             for element in Molecule.accepted_atoms:
                 if element == types[atom]:
                     continue
-                result = substitute_with_shift(types, matrix, atom, element)
+                result = substitute_with_shift(types, matrix, atom, element, allowed)
                 if result is None:
                     continue
                 new_matrix = result[1]

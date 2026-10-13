@@ -88,6 +88,26 @@ def action_is_allowed(
         mol_graph: molecular graph the action applies to.
         before: to_matrix(mol_graph), if already computed.
     """
+    # pylint: disable=import-outside-toplevel
+    from evomol.newmut import fast_rules
+
+    if fast_rules.FAST_RULES:
+        parent = fast_rules.parent_rules(mol_graph)
+        # charged or radical atoms: RDKit may refuse a result that the rules
+        # accept, so the original check is kept
+        if not parent.charged:
+            effect = fast_rules.matrix_effect(action, parent.types, parent.matrix)
+            if effect is not None:
+                return parent.allowed_after(*effect)
+            try:
+                after = to_matrix(result_graph(action, mol_graph))
+            except Exception as exc:  # pylint: disable=broad-except
+                get_logger().debug("Action %s refused (error: %r)", action, exc)
+                return False
+            if len(after[0]) >= parent.n:  # atoms only added (at the end)
+                return parent.allowed_after(after[0], after[1], list(range(parent.n)))
+            return matrices_allowed(parent.types, parent.matrix, after[0], after[1])
+
     if before is None:
         before = to_matrix(mol_graph)
     try:

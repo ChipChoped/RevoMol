@@ -255,3 +255,27 @@ def test_rule_violations_cache() -> None:
     first = mr.rule_violations(types, matrix)
     second = mr.rule_violations(types, matrix.copy())
     assert first == second
+
+
+########################################
+#   R5, no s carbon with 4 heavy atoms
+########################################
+@pytest.mark.parametrize(
+    ("smiles", "valid"),
+    (
+        pytest.param("CC(C)C", True, id="isobutane"),
+        pytest.param("CC(C)(C)C", False, id="neopentane"),
+        pytest.param("CC(C)(C)O", False, id="tert-butanol"),
+        pytest.param("CC(C)(C)c1ccccc1", False, id="tert-butylbenzene"),
+        pytest.param("C1CCC2(CC1)CCCC2", False, id="spiro centre"),
+        pytest.param(
+            "c1ccc2c(c1)-c1ccccc1C21c2ccccc2-c2ccccc12", False, id="spirobifluorene"
+        ),
+        pytest.param("C=C(C)C", True, id="isobutene (not an s carbon)"),
+        pytest.param("c1ccc2c(c1)C1c3ccccc3C2c2ccccc21", True, id="triptycene (3 heavy atoms)"),
+        pytest.param("CC1(C)C=CC=C1", False, id="5,5-dimethylcyclopentadiene"),
+    ),
+)
+def test_r5(smiles: str, valid: bool) -> None:
+    """R5: an s carbon never carries 4 heavy atoms."""
+    assert ("R5" not in rule_ids(smiles)) == valid

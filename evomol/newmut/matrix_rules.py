@@ -14,7 +14,8 @@ reference_app.js, the executable specification):
   on a cycle and each of them has another sp2 neighbour;
 - R3: a carbon carries at most one double bond;
 - R4a: two small rings (<= 8 atoms) share nothing, one atom or exactly one bond;
-- R4b: a large ring (> 8 atoms) can close flat.
+- R4b: a large ring (> 8 atoms) can close flat;
+- R5 (not in reference_app.js): an "s" carbon never carries 4 heavy atoms.
 
 An action is allowed when its result creates no new violation (see
 result_is_allowed): a molecule that already breaks a rule stays mutable.
@@ -183,6 +184,33 @@ class _Graph:
         self.sums: list[int] = rows.sum(axis=1).tolist()
         self.multiple: list[bool] = (rows >= 2).any(axis=1).tolist()
 
+    @classmethod
+    def patched(cls, parent: _Graph, types: Sequence[str], rows: dict[int, list[int]]) -> _Graph:
+        """Graph of a state that differs from parent only by the rows in rows
+        (atom index -> full row, diagonal included; atoms of index >= parent.n
+        are added atoms). The atoms are not renumbered."""
+        graph = cls.__new__(cls)
+        graph.types = list(types)
+        n = graph.n = len(graph.types)
+        extra = [0] * (n - parent.n)
+        graph.order = [row + extra if extra else row[:] for row in parent.order]
+        graph.adj = [neighbours[:] for neighbours in parent.adj]
+        graph.sums = parent.sums[:]
+        graph.multiple = parent.multiple[:]
+        for _ in extra:
+            graph.order.append([0] * n)
+            graph.adj.append([])
+            graph.sums.append(0)
+            graph.multiple.append(False)
+        for i, row in rows.items():
+            row = list(row)
+            row[i] = 0
+            graph.order[i] = row
+            graph.adj[i] = [j for j, order in enumerate(row) if order]
+            graph.sums[i] = sum(row)
+            graph.multiple[i] = any(order >= 2 for order in row)
+        return graph
+
     def bond_sum(self, i: int) -> int:
         """Sum of the row of atom i, off the diagonal."""
         return self.sums[i]
@@ -256,17 +284,19 @@ class _Graph:
             return "s"
         return "a" if any(self.connected_without(i, j) for j in doubles) else "d"
 
-    def rings(self) -> list[list[int]]:
+    def rings(self, bridges: set[tuple[int, int]] | None = None) -> list[list[int]]:
         """Smallest ring through each bond, deduplicated by atom set.
 
         For each bond (u, v), shortest path u -> v without the bond (BFS),
         closed by the bond. The ring is the ordered list of its atoms.
+        bridges: self.bridges(), if already computed.
         """
         rings: dict[frozenset[int], list[int]] = {}
         # A bridge bond lies on no cycle, and a shortest path between the two
         # atoms of a ring bond never crosses a bridge: the search only follows
         # ring bonds (same paths, fewer atoms visited).
-        bridges = self.bridges()
+        if bridges is None:
+            bridges = self.bridges()
         ring_adj = [
             [v for v in self.adj[u] if (min(u, v), max(u, v)) not in bridges]
             for u in range(self.n)
@@ -367,72 +397,66 @@ def hybridization(
 ############################################################
 
 
-def _r1_valence(graph: _Graph, sulfur_valence: int) -> list[Violation]:
-    """R1: the sum of a row never exceeds the maximum valence."""
-    violations = []
-    for i in range(graph.n):
-        bond_sum = graph.bond_sum(i)
-        valence = max_valence(graph.types[i], sulfur_valence)
-        if bond_sum > valence:
-            violations.append(
-                Violation(
-                    "R1",
-                    (i,),
-                    f"{graph.types[i]}{i} porte {bond_sum} liaisons "
-                    f"pour une valence max de {valence}",
-                )
-            )
-    return violations
+# Each rule is written per item (an atom, a bond, a large ring) so that the
+# fast check of newmut.fast_rules reuses exactly the same code.
 
 
-def _r2_s_carbons(graph: _Graph) -> list[Violation]:
-    """R2: two bonded "s" carbons (csPairs of reference_app.js)."""
-
-    def sp2_like(v: int) -> bool:
-        # a 2 or 3 in its row, or O / S, or an N with a conjugated lone pair
-        if graph.has_multiple(v):
-            return True
-        element = graph.types[v]
-        if element in ("O", "S"):
-            return True
-        if element == "N":
-            return any(graph.has_multiple(w) for w in graph.adj[v])
-        return False
-
-    def sp2_next(x: int, y: int) -> bool:
-        return any(v != y and sp2_like(v) for v in graph.adj[x])
-
-    violations = []
-    for a in range(graph.n):
-        if not graph.is_s_carbon(a):
-            continue
-        for b in graph.adj[a]:
-            if b < a or not graph.is_s_carbon(b):
-                continue
-            allowed = (
-                graph.connected_without(a, b) and sp2_next(a, b) and sp2_next(b, a)
-            )
-            if not allowed:
-                violations.append(
-                    Violation(
-                        "R2",
-                        (a, b),
-                        f"C{a} et C{b} sont deux carbones s liés hors des cas "
-                        "permis (liaison dans un cycle, chacun ayant un autre "
-                        "voisin sp²)",
-                    )
-                )
-    return violations
+def r1_atom(graph: _Graph, i: int, sulfur_valence: int) -> Violation | None:
+    """R1: the sum of the row of atom i does not exceed its maximum valence."""
+    bond_sum = graph.bond_sum(i)
+    valence = max_valence(graph.types[i], sulfur_valence)
+    if bond_sum <= valence:
+        return None
+    return Violation(
+        "R1", (i,), f"{graph.types[i]}{i} porte {bond_sum} liaisons pour une valence max de {valence}"
+    )
 
 
-def _r3_double_carbons(graph: _Graph) -> list[Violation]:
+def _sp2_like(graph: _Graph, v: int) -> bool:
+    """sp2 neighbour of R2: a 2 or 3 in its row, or O / S, or an N with a
+    conjugated lone pair (a neighbour carrying a 2 or a 3)."""
+    if graph.has_multiple(v):
+        return True
+    element = graph.types[v]
+    if element in ("O", "S"):
+        return True
+    if element == "N":
+        return any(graph.has_multiple(w) for w in graph.adj[v])
+    return False
+
+
+def r2_bond(graph: _Graph, a: int, b: int, in_ring: bool) -> Violation | None:
+    """R2: bond a-b between two "s" carbons, allowed only if it lies on a cycle
+    (in_ring) and each of them has another sp2 neighbour (csPairs of
+    reference_app.js). Depends on the rows within distance 2 of a and b."""
+    if not (graph.is_s_carbon(a) and graph.is_s_carbon(b)):
+        return None
+    if in_ring and all(
+        any(v != y and _sp2_like(graph, v) for v in graph.adj[x]) for x, y in ((a, b), (b, a))
+    ):
+        return None
+    a, b = min(a, b), max(a, b)
+    return Violation(
+        "R2",
+        (a, b),
+        f"C{a} et C{b} sont deux carbones s liés hors des cas permis (liaison dans un cycle, "
+        "chacun ayant un autre voisin sp²)",
+    )
+
+
+def r3_atom(graph: _Graph, i: int) -> Violation | None:
     """R3: a carbon carries at most one double bond."""
-    return [
-        Violation("R3", (i,), f"C{i} porte deux doubles liaisons")
-        for i in range(graph.n)
-        if graph.types[i] == "C"
-        and sum(1 for j in graph.adj[i] if graph.order[i][j] == 2) > 1
-    ]
+    if graph.types[i] == "C" and sum(1 for j in graph.adj[i] if graph.order[i][j] == 2) > 1:
+        return Violation("R3", (i,), f"C{i} porte deux doubles liaisons")
+    return None
+
+
+def r5_atom(graph: _Graph, i: int) -> Violation | None:
+    """R5: an "s" carbon (sp3) never carries 4 heavy atoms (no quaternary
+    carbon: neopentane, tert-butyl, spiro centre, fourth ring on a carbon)."""
+    if graph.is_s_carbon(i) and len(graph.adj[i]) >= 4:
+        return Violation("R5", (i,), f"C{i} est un carbone s qui porte {len(graph.adj[i])} atomes lourds")
+    return None
 
 
 def _ring_angle(ring: list[int]) -> float:
@@ -440,117 +464,110 @@ def _ring_angle(ring: list[int]) -> float:
     return (len(ring) - 2) * 180 / len(ring)
 
 
-def _r4_rings(graph: _Graph) -> list[Violation]:
-    """R4: tangled small rings (R4a), large rings that cannot close flat (R4b).
-
-    tangledRings of reference_app.js.
-    """
-    rings = graph.rings()
+def split_rings(rings: list[list[int]]) -> tuple[list[list[int]], list[list[int]], list[set[int]]]:
+    """(small rings, large rings, atom sets of the small rings)."""
     small = [ring for ring in rings if len(ring) <= SMALL_RING]
     large = [ring for ring in rings if len(ring) > SMALL_RING]
-    small_sets = [set(ring) for ring in small]
-    violations = []
+    return small, large, [set(ring) for ring in small]
 
-    # R4a: small rings share nothing, one atom, or exactly one bond
+
+def r4a_violations(graph: _Graph, small: list[list[int]], small_sets: list[set[int]]) -> list[Violation]:
+    """R4a: two small rings share nothing, one atom, or exactly one bond.
+    Depends only on the ring bonds."""
+    violations = []
     for i, ring_i in enumerate(small):
         for j in range(i + 1, len(small)):
             shared = [x for x in ring_i if x in small_sets[j]]
-            if len(shared) > 2 or (
-                len(shared) == 2 and not graph.order[shared[0]][shared[1]]
-            ):
+            if len(shared) > 2 or (len(shared) == 2 and not graph.order[shared[0]][shared[1]]):
                 violations.append(
                     Violation(
                         "R4a",
                         tuple(shared),
-                        f"cycles emmêlés : deux cycles partagent {len(shared)} "
-                        "atomes au lieu d'une seule liaison",
+                        f"cycles emmêlés : deux cycles partagent {len(shared)} atomes au lieu d'une "
+                        "seule liaison",
                     )
                 )
+    return violations
+
+
+def r4b_ring(
+    graph: _Graph, ring: list[int], small: list[list[int]], small_sets: list[set[int]]
+) -> Violation | None:
+    """R4b: a large ring must close flat (tangledRings of reference_app.js).
+    Depends on the small rings and on the rows of the atoms of the ring."""
 
     def rings_with(*atoms: int) -> list[list[int]]:
-        return [
-            ring
-            for ring, ring_set in zip(small, small_sets)
-            if all(x in ring_set for x in atoms)
-        ]
+        return [r for r, r_set in zip(small, small_sets) if all(x in r_set for x in atoms)]
 
-    # R4b: large rings close flat (sum of the turning angles close to 360°)
-    for ring in large:
-        n = len(ring)
-        total = 0.0
-        free = 0
-        sp3: int | None = None
-        for k in range(n):
-            x, a, b = ring[k], ring[(k + n - 1) % n], ring[(k + 1) % n]
-            others = [y for y in graph.adj[x] if y not in (a, b)]
-            if graph.is_s_carbon(x):
-                sp3 = x
-                break
-            if any(graph.order[x][y] == 3 for y in graph.adj[x]):
-                continue  # sp: straight, turning angle 0
-            ring_ab = rings_with(x, a, b)
-            if ring_ab:
-                phi = 360 - _ring_angle(ring_ab[0])
+    n = len(ring)
+    total = 0.0
+    free = 0
+    for k in range(n):
+        x, a, b = ring[k], ring[(k + n - 1) % n], ring[(k + 1) % n]
+        others = [y for y in graph.adj[x] if y not in (a, b)]
+        if graph.is_s_carbon(x):
+            return Violation(
+                "R4b", (x,), f"grand cycle de {n} atomes contenant C{x}, un carbone s : il ne peut pas rester plan"
+            )
+        if any(graph.order[x][y] == 3 for y in graph.adj[x]):
+            continue  # sp: straight, turning angle 0
+        ring_ab = rings_with(x, a, b)
+        if ring_ab:
+            phi = 360 - _ring_angle(ring_ab[0])
+        else:
+            t = others[0] if others else None
+            ring_a = rings_with(x, a, t) if t is not None else []
+            ring_b = rings_with(x, b, t) if t is not None else []
+            if ring_a and ring_b:
+                phi = 360 - _ring_angle(ring_a[0]) - _ring_angle(ring_b[0])
+            elif ring_a:
+                phi = (360 - _ring_angle(ring_a[0])) / 2
+            elif ring_b:
+                phi = (360 - _ring_angle(ring_b[0])) / 2
             else:
-                t = others[0] if others else None
-                ring_a = rings_with(x, a, t) if t is not None else []
-                ring_b = rings_with(x, b, t) if t is not None else []
-                if ring_a and ring_b:
-                    phi = 360 - _ring_angle(ring_a[0]) - _ring_angle(ring_b[0])
-                elif ring_a:
-                    phi = (360 - _ring_angle(ring_a[0])) / 2
-                elif ring_b:
-                    phi = (360 - _ring_angle(ring_b[0])) / 2
-                else:
-                    phi = 120
-                    if not others:
-                        free += 1  # its H (or lone pair) may point in or out
-            total += 180 - phi
-        if sp3 is not None:
-            violations.append(
-                Violation(
-                    "R4b",
-                    (sp3,),
-                    f"grand cycle de {n} atomes contenant C{sp3}, un carbone s : "
-                    "il ne peut pas rester plan",
-                )
-            )
-            continue
-        # free atoms point outwards by default; turning one inwards costs 120°
-        max_inward = free if n >= INWARD_H_MIN_RING else 0
-        if not any(
-            abs(total - 120 * k - 360) <= FLAT_TOLERANCE
-            for k in range(max_inward + 1)
-        ):
-            violations.append(
-                Violation(
-                    "R4b",
-                    tuple(ring),
-                    f"grand cycle de {n} atomes qui ne peut pas se refermer à "
-                    f"plat : la somme des virages vaut {round(total)}° au lieu "
-                    "d'environ 360°",
-                )
-            )
-    return violations
+                phi = 120
+                if not others:
+                    free += 1  # its H (or lone pair) may point in or out
+        total += 180 - phi
+    # free atoms point outwards by default; turning one inwards costs 120°
+    max_inward = free if n >= INWARD_H_MIN_RING else 0
+    if any(abs(total - 120 * k - 360) <= FLAT_TOLERANCE for k in range(max_inward + 1)):
+        return None
+    return Violation(
+        "R4b",
+        tuple(ring),
+        f"grand cycle de {n} atomes qui ne peut pas se refermer à plat : la somme des virages vaut "
+        f"{round(total)}° au lieu d'environ 360°",
+    )
+
+
+def all_violations(graph: _Graph, sulfur_valence: int) -> list[Violation]:
+    """Violations of R1 to R5, in this order."""
+    bridges = graph.bridges()
+    small, large, small_sets = split_rings(graph.rings(bridges))
+    bonds = [(a, b) for a in range(graph.n) for b in graph.adj[a] if a < b]
+    found = (
+        [r1_atom(graph, i, sulfur_valence) for i in range(graph.n)]
+        + [r2_bond(graph, a, b, (a, b) not in bridges) for a, b in bonds]
+        + [r3_atom(graph, i) for i in range(graph.n)]
+        + r4a_violations(graph, small, small_sets)
+        + [r4b_ring(graph, ring, small, small_sets) for ring in large]
+        + [r5_atom(graph, i) for i in range(graph.n)]
+    )
+    return [violation for violation in found if violation is not None]
 
 
 @lru_cache(maxsize=CACHE_SIZE)
 def _violations_from_key(
     types: tuple[str, ...], data: bytes, n: int, sulfur_valence: int
 ) -> tuple[Violation, ...]:
-    graph = _graph_from_key(types, data, n)
-    return tuple(
-        _r1_valence(graph, sulfur_valence)
-        + _r2_s_carbons(graph)
-        + _r3_double_carbons(graph)
-        + _r4_rings(graph)
-    )
+    return tuple(all_violations(_graph_from_key(types, data, n), sulfur_valence))
 
 
 def rule_violations(
     types: Sequence[str], matrix: np.ndarray, sulfur_valence: int | None = None
 ) -> list[Violation]:
-    """All the violations of R1 to R4 (memoized by matrix)."""
+    """All the violations of R1 to R5 (memoized by matrix)."""
     if sulfur_valence is None:
         sulfur_valence = current_sulfur_valence()
     matrix = np.ascontiguousarray(matrix, dtype=np.int64)
@@ -564,14 +581,14 @@ def rule_violations(
 def is_valid(
     types: Sequence[str], matrix: np.ndarray, sulfur_valence: int | None = None
 ) -> bool:
-    """True if the molecule breaks none of the rules R1 to R4."""
+    """True if the molecule breaks none of the rules R1 to R5."""
     return not rule_violations(types, matrix, sulfur_valence)
 
 
 def rule_counts(
     types: Sequence[str], matrix: np.ndarray, sulfur_valence: int | None = None
 ) -> tuple[int, int]:
-    """(number of R1 violations, number of R2 + R3 + R4 violations)."""
+    """(number of R1 violations, number of R2 + R3 + R4 + R5 violations)."""
     violations = rule_violations(types, matrix, sulfur_valence)
     nb_r1 = sum(1 for v in violations if v.rule_id == "R1")
     return nb_r1, len(violations) - nb_r1
@@ -587,8 +604,8 @@ def matrices_allowed(
     """True if the state after creates no new violation.
 
     As in reference_app.js, the valence (R1) and the carbon / ring rules
-    (R2 + R3 + R4, counted together) are compared separately: neither count
-    may increase. A molecule already outside the rules stays mutable.
+    (R2 + R3 + R4 + R5, counted together) are compared separately: neither
+    count may increase. A molecule already outside the rules stays mutable.
     """
     r1_before, rules_before = rule_counts(types_before, matrix_before, sulfur_valence)
     r1_after, rules_after = rule_counts(types_after, matrix_after, sulfur_valence)

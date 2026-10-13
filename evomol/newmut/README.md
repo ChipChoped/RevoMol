@@ -1,7 +1,7 @@
 # newmut : règles matricielles et nouvelles mutations
 
 Ce dossier ajoute à RevoMol :
-1. des **règles de validité lues sur la matrice** des ordres de liaison (R1 à R4), appliquées comme la valence,
+1. des **règles de validité lues sur la matrice** des ordres de liaison (R1 à R5), appliquées comme la valence,
    c'est-à-dire au moment de lister les mutations possibles, et jamais comme filtre sur les molécules produites ;
 2. de **nouvelles mutations**, élémentaires (AppendAtomRule, SubstituteShift) et composées (greffe, annélation,
    inversion d'un chemin alterné, aromatisation).
@@ -26,9 +26,10 @@ hors diagonale l'ordre de liaison (0 à 3). Les H sont implicites.
 | R3 | un carbone avec deux doubles liaisons |
 | R4a | deux petits cycles (≤ 8 atomes) qui partagent autre chose que rien, un atome ou une liaison (cycles pontés) |
 | R4b | un grand cycle (> 8 atomes) qui ne peut pas se refermer à plat, ou qui contient un carbone `s` |
+| R5 | un carbone `s` qui porte 4 atomes lourds (carbone quaternaire : néopentane, tert-butyle, centre spiro, quatrième cycle sur un carbone). Règle ajoutée, absente de l'atelier JS |
 
 Une mutation est permise si son résultat ne crée **aucune nouvelle violation** : le nombre de violations de R1 ne
-doit pas augmenter, ni celui de R2 + R3 + R4 (comptées ensemble, comme `ruleCount` du JS). Une molécule de départ
+doit pas augmenter, ni celui de R2 + R3 + R4 + R5 (comptées ensemble, comme `ruleCount` du JS). Une molécule de départ
 déjà hors règles reste donc modifiable.
 
 `hybridization` (sp³ / sp² / sp, lue sur la matrice) est une information, pas une règle.
@@ -94,25 +95,41 @@ algorithm.run()
 Pour essayer les mutations à la main et faire des marches aléatoires :
 `notebooks/random_walk/newmut_walk.ipynb`.
 
-## Coût des règles et option `lazy_rules`
+## Coût des règles, vérification rapide et option `lazy_rules`
 
-Pour lister les mutations permises, chaque mutation candidate est appliquée sur une copie et ses règles sont
-vérifiées (environ 0,25 ms par mutation sur une molécule de 35 atomes). Les listes sont gardées en mémoire par
-molécule (`rule_filtered.CACHE_SIZE`, 10 000 molécules).
+Pour lister les mutations permises, le résultat de chaque mutation candidate est vérifié. La vérification rapide
+(`fast_rules.py`, active par défaut) donne exactement la même réponse que la vérification d'origine (copie RDKit du
+résultat, toutes les règles recalculées sur toute la molécule), mais :
+1. elle calcule le résultat directement sur la matrice, sans RDKit (sauf `AddGroupMG` et `RemoveGroupMG`) ;
+2. elle ne recalcule que les règles autour du changement : R1, R3, R5 sur les lignes modifiées, R2 sur les liaisons
+   à moins de deux atomes d'un changement (et celles qui entrent ou sortent d'un cycle), R4 seulement si les liaisons
+   de cycle changent (sinon, seuls les grands cycles touchés sont revérifiés).
 
-`NewMutNeighborhoodStrategy(lazy_rules=True)` (désactivé par défaut) essaie plutôt les mutations du type tiré une par
-une, dans un ordre aléatoire, et garde la première permise : chaque mutation permise a la même probabilité, mais
-on en vérifie en général une ou deux au lieu de toutes.
+L'équivalence est testée sur toutes les mutations candidates de nombreuses molécules
+(`tests/newmut/test_fast_rules.py` ; 56 852 mutations sur 195 molécules sans aucun désaccord, le 2026-10-13).
+`fast_rules.FAST_RULES = False` revient à la vérification d'origine. Les listes filtrées sont aussi gardées en mémoire
+par molécule (`rule_filtered.CACHE_SIZE`, 10 000 molécules).
 
-Mesure (une seule série, `scripts/newmut/bench_rules.py`, EA QED, 10 générations × 10 remplacements, population 20,
-graine 0) :
+`NewMutNeighborhoodStrategy(lazy_rules=True)` (désactivé par défaut) essaie les mutations du type tiré une par une,
+dans un ordre aléatoire, et garde la première permise : chaque mutation permise a la même probabilité, mais on en
+vérifie en général une ou deux au lieu de toutes.
+
+Mesures du 2026-10-13 (une seule série chacune, vérification rapide) :
+
+EA QED (`scripts/newmut/bench_rules.py`, 10 générations × 10 remplacements, population 20, graine 0) :
 
 | mode | ms par candidat | × par rapport à RevoMol sans règles |
 |---|---|---|
-| sans règles | 1,4 | 1 |
-| règles, listes complètes, sans cache | 10,1 | 7,3 |
-| règles, listes complètes, avec cache | 5,4 | 3,9 |
-| règles, `lazy_rules=True` | 2,3 | 1,7 |
+| sans règles | 1,75 | 1 |
+| règles, listes complètes, sans cache | 6,6 | 3,8 |
+| règles, listes complètes, avec cache | 4,6 | 2,6 |
+| règles, `lazy_rules=True` | 1,9 | 1,1 |
+
+Marches de 200 pas et tirages (`scripts/newmut/compare_walk_time.py`, départ benzène, C, O, N, 4 marches par
+condition) : anciennes mutations 0,12 ms par voisin, nouvelles mutations avec règles 0,51 ms par voisin (2,25 avant la
+vérification rapide). Les marches « nouvelles » font des molécules plus grosses (34 atomes en moyenne contre 10) et
+ont donc plus de voisins : 156 ms par pas contre 15. Dans l'algorithme évolutionnaire : 0,3 ms par mutation (anciennes),
+11 ms (nouvelles, listes complètes), 2 ms (nouvelles, `lazy_rules`).
 
 QED est très rapide à calculer : avec une évaluation plus lourde (Hückel, xTB), la part des règles diminue.
 
@@ -122,6 +139,7 @@ QED est très rapide à calculer : avec une évaluation plus lourde (Hückel, xT
 /Applications/anaconda3/envs/revomol/bin/python -m pytest tests/newmut -q
 /Applications/anaconda3/envs/revomol/bin/python scripts/newmut/bench_rules.py
 /Applications/anaconda3/envs/revomol/bin/python scripts/newmut/run_all_options.py
+/Applications/anaconda3/envs/revomol/bin/python scripts/newmut/compare_walk_time.py   # anciennes vs nouvelles mutations
 ```
 
 ## Limites connues

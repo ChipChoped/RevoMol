@@ -4,7 +4,7 @@ Nouvelles mutations (newmut) : essai à la main et marches aléatoires
 
 Même principe que scripts/Lea/pi_walk.py, dont ce module reprend les marches, les fichiers et les figures sans le
 modifier : seule la configuration change. Elle accepte en plus les options de
-evomol.newmut.setup_newmut_action_space (règles matricielles R1-R4 et nouvelles mutations).
+evomol.newmut.setup_newmut_action_space (règles matricielles R1-R5 et nouvelles mutations).
 
 Essai à la main, sur l'espace d'action configuré par configure(CONFIG) :
   - show_molecule(smiles) : dessin avec les numéros d'atomes ;
@@ -73,7 +73,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     **copy.deepcopy(pw.DEFAULT_CONFIG),
     "ACCEPTED_ATOMS": ["C", "O", "N"],
     # ── nouvelles mutations (evomol/newmut)
-    "MATRIX_RULES": True,          # les mutations d'evomol respectent les règles R1-R4
+    "MATRIX_RULES": True,          # les mutations d'evomol respectent les règles R1-R5
     "APPEND_ATOM_RULE": True,      # AppendAtomRuleMG remplace AddAtomMG
     "SUBSTITUTION_SHIFT": True,    # SubstituteShiftMG remplace SubstituteAtomMG
     "GRAFT": True,                 # GraftFragmentMG
