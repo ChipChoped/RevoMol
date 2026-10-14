@@ -154,6 +154,26 @@ def test_same_answer(molecules: list[str]) -> None:
     assert nb_checked > 5000
 
 
+@pytest.mark.parametrize("outside_rings", (False, True))
+def test_same_answer_r2_hetero(molecules: list[str], outside_rings: bool) -> None:
+    """Same agreement with the options R2_HETERO (and R2_HETERO_OUTSIDE_RINGS)."""
+    from evomol.newmut import matrix_rules as mr  # pylint: disable=import-outside-toplevel
+
+    classes = all_rule_classes()
+    mr.R2_HETERO, mr.R2_HETERO_OUTSIDE_RINGS = True, outside_rings
+    try:
+        mismatches = []
+        for smiles in molecules[::2]:
+            for action_class in classes:
+                fast = flags(action_class, smiles, fast=True)
+                slow = flags(action_class, smiles, fast=False)
+                assert [a for a, _ in fast] == [a for a, _ in slow]
+                mismatches += [(a, f, s) for (a, f), (_, s) in zip(fast, slow) if f != s]
+        assert not mismatches, mismatches[:10]
+    finally:
+        mr.R2_HETERO, mr.R2_HETERO_OUTSIDE_RINGS = False, False
+
+
 def test_fast_is_used() -> None:
     """The fast path computes the effect of the usual actions on the matrix."""
     setup_newmut_action_space(matrix_rules=True)

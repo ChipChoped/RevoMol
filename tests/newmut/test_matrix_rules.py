@@ -144,6 +144,31 @@ def test_r2(smiles: str, valid: bool) -> None:
     assert ("R2" not in rule_ids(smiles)) == valid
 
 
+@pytest.mark.parametrize(
+    ("smiles", "off", "hetero", "outside_rings"),
+    (
+        pytest.param("NN", True, False, False, id="hydrazine"),
+        pytest.param("NO", True, False, False, id="hydroxylamine"),
+        pytest.param("OO", True, False, False, id="hydrogen peroxide"),
+        pytest.param("NNc1ccccc1", True, False, False, id="phenylhydrazine"),
+        pytest.param("CN=NC", True, True, True, id="azomethane"),
+        pytest.param("CON=C", True, True, True, id="oxime ether"),
+        pytest.param("CNC", True, True, True, id="dimethylamine (C-N)"),
+        pytest.param("C1=CCNN1", True, False, True, id="pyrazoline (ring, one N without sp2 neighbour)"),
+        pytest.param("C1=CNNC=C1", True, True, True, id="1,2-dihydropyridazine (ring, sp2 neighbours)"),
+    ),
+)
+def test_r2_hetero(smiles: str, off: bool, hetero: bool, outside_rings: bool) -> None:
+    """Options R2_HETERO and R2_HETERO_OUTSIDE_RINGS: validity for R2 without
+    option, with R2_HETERO, with both."""
+    try:
+        for r2_hetero, r2_outside, valid in ((False, False, off), (True, False, hetero), (True, True, outside_rings)):
+            mr.R2_HETERO, mr.R2_HETERO_OUTSIDE_RINGS = r2_hetero, r2_outside
+            assert ("R2" not in rule_ids(smiles)) == valid, (r2_hetero, r2_outside)
+    finally:
+        mr.R2_HETERO, mr.R2_HETERO_OUTSIDE_RINGS = False, False
+
+
 ########################################
 #     R3, one double bond per carbon
 ########################################

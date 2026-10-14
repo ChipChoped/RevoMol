@@ -17,6 +17,13 @@ reference_app.js, the executable specification):
 - R4b: a large ring (> 8 atoms) can close flat;
 - R5 (not in reference_app.js): an "s" carbon never carries 4 heavy atoms.
 
+Options of R2 (not in reference_app.js, off by default, set by
+setup_newmut_action_space):
+- R2_HETERO: R2 also applies to the N-N, N-O and O-O bonds between two atoms
+  that have only single bonds, with the same exception on cycles;
+- R2_HETERO_OUTSIDE_RINGS: with R2_HETERO, these bonds are refused only
+  outside the cycles (a ring bond between them is always allowed).
+
 An action is allowed when its result creates no new violation (see
 result_is_allowed): a molecule that already breaks a rule stays mutable.
 """
@@ -73,6 +80,10 @@ INWARD_H_MIN_RING = 14
 # size of the memoization caches (one entry per molecular graph)
 CACHE_SIZE = 100_000
 
+# options of R2 (see the module docstring)
+R2_HETERO = False
+R2_HETERO_OUTSIDE_RINGS = False
+
 _BOND_TYPES = {
     1: Chem.BondType.SINGLE,
     2: Chem.BondType.DOUBLE,
@@ -91,6 +102,11 @@ class Violation(NamedTuple):
 ############################################################
 #                     VALENCE AND MATRIX                   #
 ############################################################
+
+
+def rule_options() -> tuple[bool, bool]:
+    """Options of the rules currently set (part of the cache keys)."""
+    return R2_HETERO, R2_HETERO_OUTSIDE_RINGS
 
 
 def current_sulfur_valence() -> int:
@@ -425,11 +441,24 @@ def _sp2_like(graph: _Graph, v: int) -> bool:
     return False
 
 
+def _is_s_hetero(graph: _Graph, i: int) -> bool:
+    """N or O with only single bonds (option R2_HETERO)."""
+    return graph.types[i] in ("N", "O") and not graph.has_multiple(i)
+
+
 def r2_bond(graph: _Graph, a: int, b: int, in_ring: bool) -> Violation | None:
     """R2: bond a-b between two "s" carbons, allowed only if it lies on a cycle
     (in_ring) and each of them has another sp2 neighbour (csPairs of
-    reference_app.js). Depends on the rows within distance 2 of a and b."""
-    if not (graph.is_s_carbon(a) and graph.is_s_carbon(b)):
+    reference_app.js). Option R2_HETERO: same for two N / O with only single
+    bonds (R2_HETERO_OUTSIDE_RINGS: always allowed on a cycle). Depends on the
+    rows within distance 2 of a and b."""
+    if graph.is_s_carbon(a) and graph.is_s_carbon(b):
+        kind = "carbones s"
+    elif R2_HETERO and _is_s_hetero(graph, a) and _is_s_hetero(graph, b):
+        if in_ring and R2_HETERO_OUTSIDE_RINGS:
+            return None
+        kind = "hétéroatomes sans liaison multiple"
+    else:
         return None
     if in_ring and all(
         any(v != y and _sp2_like(graph, v) for v in graph.adj[x]) for x, y in ((a, b), (b, a))
@@ -439,8 +468,8 @@ def r2_bond(graph: _Graph, a: int, b: int, in_ring: bool) -> Violation | None:
     return Violation(
         "R2",
         (a, b),
-        f"C{a} et C{b} sont deux carbones s liés hors des cas permis (liaison dans un cycle, "
-        "chacun ayant un autre voisin sp²)",
+        f"{graph.types[a]}{a} et {graph.types[b]}{b} sont deux {kind} liés hors des cas permis "
+        "(liaison dans un cycle, chacun ayant un autre voisin sp²)",
     )
 
 
@@ -559,7 +588,11 @@ def all_violations(graph: _Graph, sulfur_valence: int) -> list[Violation]:
 
 @lru_cache(maxsize=CACHE_SIZE)
 def _violations_from_key(
-    types: tuple[str, ...], data: bytes, n: int, sulfur_valence: int
+    types: tuple[str, ...],
+    data: bytes,
+    n: int,
+    sulfur_valence: int,
+    options: tuple[bool, bool],  # pylint: disable=unused-argument  # cache key only
 ) -> tuple[Violation, ...]:
     return tuple(all_violations(_graph_from_key(types, data, n), sulfur_valence))
 
@@ -573,7 +606,7 @@ def rule_violations(
     matrix = np.ascontiguousarray(matrix, dtype=np.int64)
     return list(
         _violations_from_key(
-            tuple(types), matrix.tobytes(), matrix.shape[0], sulfur_valence
+            tuple(types), matrix.tobytes(), matrix.shape[0], sulfur_valence, rule_options()
         )
     )
 

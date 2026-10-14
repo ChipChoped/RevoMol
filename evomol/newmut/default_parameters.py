@@ -11,6 +11,7 @@ from __future__ import annotations
 from evomol import default_parameters as dp
 from evomol.action import Action
 from evomol.action import molecular_graph as mg
+from evomol.newmut import matrix_rules as mr
 from evomol.newmut import rule_filtered as rf
 from evomol.newmut.annelate import AnnelateMG
 from evomol.newmut.append_atom_rule import AppendAtomRuleMG
@@ -52,6 +53,9 @@ def setup_newmut_action_space(
     graft_fragments: dict[str, str] | None = None,
     annelation_fragments: dict[str, str] | None = None,
     insert_carbon_keep_double: bool = False,
+    substitution_no_shift: bool = False,
+    r2_hetero: bool = False,
+    r2_hetero_outside_rings: bool = False,
 ) -> None:
     """Set the action space of evomol with the new mutations.
 
@@ -77,6 +81,14 @@ def setup_newmut_action_space(
             InsertCarbonMG: a carbon inserted into a double bond keeps one
             double bond (a=C-b and a-C=b instead of a-C-b). False: original
             behaviour.
+        substitution_no_shift: SubstituteShiftMG keeps only the substitutions
+            where the new element accepts the bonds as they are (no double
+            bond lowered or shifted). False: original behaviour.
+        r2_hetero: rule R2 also refuses the N-N, N-O and O-O bonds between
+            two atoms with only single bonds (same exception on cycles as for
+            the carbons). False: original behaviour.
+        r2_hetero_outside_rings: with r2_hetero, these bonds are refused only
+            outside the cycles. No effect without r2_hetero.
 
     With all the new options left to False, the action space is the one of
     setup_default_action_space.
@@ -98,6 +110,10 @@ def setup_newmut_action_space(
 
     # the options of the actions may have changed: cached lists are stale
     rf.clear_cache()
+
+    SubstituteShiftMG.shift_bonds = not substitution_no_shift
+    mr.R2_HETERO = r2_hetero
+    mr.R2_HETERO_OUTSIDE_RINGS = r2_hetero_outside_rings
 
     GraftFragmentMG.fragments = dict(
         GRAFT_FRAGMENTS if graft_fragments is None else graft_fragments

@@ -28,6 +28,10 @@ hors diagonale l'ordre de liaison (0 à 3). Les H sont implicites.
 | R4b | un grand cycle (> 8 atomes) qui ne peut pas se refermer à plat, ou qui contient un carbone `s` |
 | R5 | un carbone `s` qui porte 4 atomes lourds (carbone quaternaire : néopentane, tert-butyle, centre spiro, quatrième cycle sur un carbone). Règle ajoutée, absente de l'atelier JS |
 
+Options de R2 (absentes de l'atelier JS, désactivées par défaut) : `r2_hetero` étend R2 aux liaisons N–N, N–O et
+O–O entre deux atomes sans liaison multiple, avec la même exception dans les cycles que pour les carbones ;
+`r2_hetero_outside_rings` (avec `r2_hetero`) ne refuse ces liaisons qu'hors cycle.
+
 Une mutation est permise si son résultat ne crée **aucune nouvelle violation** : le nombre de violations de R1 ne
 doit pas augmenter, ni celui de R2 + R3 + R4 + R5 (comptées ensemble, comme `ruleCount` du JS). Une molécule de départ
 déjà hors règles reste donc modifiable.
@@ -40,7 +44,7 @@ déjà hors règles reste donc modifiable.
 |---|---|---|
 | `rule_filtered(Classe)` | `rule_filtered.py` | une mutation existante restreinte par les règles (même nom de classe : mêmes traces) |
 | `AppendAtomRuleMG` | `append_atom_rule.py` | ajout d'un atome ; un C ajouté sur un carbone `s` l'est par une double liaison (≥ 2 H), sinon pas d'ajout |
-| `SubstituteShiftMG` | `substitute_shift.py` | substitution ; si le nouvel élément accepte moins de liaisons (C= → O), les doubles liaisons sont déplacées le long d'un chemin alterné |
+| `SubstituteShiftMG` | `substitute_shift.py` | substitution ; si le nouvel élément accepte moins de liaisons (C= → O), les doubles liaisons sont déplacées le long d'un chemin alterné. Option `substitution_no_shift` : seulement les substitutions où le nouvel élément accepte les liaisons telles quelles (aucune double abaissée ni déplacée), comme SubstituteAtomMG |
 | `GraftFragmentMG` | `graft.py` | greffe d'un fragment du vocabulaire sur un atome |
 | `AnnelateMG` | `annelate.py` | fusion d'un cycle sur une liaison (benzo, thiéno) |
 | `FlipAlternatingPathMG` | `flip_path.py` | inversion 1 ↔ 2 du plus court chemin alterné 1, 2, …, 1 entre deux atomes (bascule quinoïde) |

@@ -72,6 +72,7 @@ class ParentRules:
         self.matrix = np.ascontiguousarray(matrix, dtype=np.int64)
         self.n = len(self.types)
         self.sulfur_valence = sulfur_valence
+        self.options = mr.rule_options()
         self.graph = _Graph(self.types, self.matrix)
         graph = self.graph
         self.bridges = graph.bridges()
@@ -318,8 +319,9 @@ def parent_rules(mol_graph: MolecularGraph) -> ParentRules:
     """Rules of a molecular graph, kept in memory (on the graph object, and by
     matrix for the other graphs of the same molecule)."""
     sulfur_valence = mr.current_sulfur_valence()
+    options = mr.rule_options()
     parent: ParentRules | None = getattr(mol_graph, "_newmut_rules", None)
-    if parent is not None and parent.sulfur_valence == sulfur_valence:
+    if parent is not None and parent.sulfur_valence == sulfur_valence and parent.options == options:
         return parent
     types, matrix = mr.to_matrix(mol_graph)
     mol = mol_graph.mol
@@ -327,7 +329,7 @@ def parent_rules(mol_graph: MolecularGraph) -> ParentRules:
         (mol.GetAtomWithIdx(i).GetFormalCharge(), mol.GetAtomWithIdx(i).GetNumRadicalElectrons())
         for i in range(len(types))
     )
-    key = (tuple(types), matrix.tobytes(), charges, sulfur_valence)
+    key = (tuple(types), matrix.tobytes(), charges, sulfur_valence, options)
     parent = _parents.get(key)
     if parent is None:
         parent = ParentRules(types, matrix, sulfur_valence)

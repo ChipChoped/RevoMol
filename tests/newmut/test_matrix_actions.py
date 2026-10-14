@@ -195,6 +195,19 @@ def test_substitute_shift_moves_hole() -> None:
     assert produced
 
 
+def test_substitute_no_shift() -> None:
+    """Option shift_bonds = False: benzene -> pyridine stays (valence holds),
+    toluene ring carbon -> O disappears (a double bond must be lowered)."""
+    SubstituteShiftMG.shift_bonds = False
+    try:
+        actions = SubstituteShiftMG.list_actions(Molecule("Cc1ccccc1"))
+        assert not any(action.new_type == "O" and action.atom_idx != 0 for action in actions)
+        assert all(not action.bond_changes for action in actions)
+        assert any(action.new_type == "N" for action in actions)
+    finally:
+        SubstituteShiftMG.shift_bonds = True
+
+
 ########################################
 #          FlipAlternatingPath
 ########################################

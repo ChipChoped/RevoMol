@@ -22,11 +22,15 @@ Essai à la main, sur l'espace d'action configuré par configure(CONFIG) :
 from __future__ import annotations
 
 import copy
+import json
+import multiprocessing
 import os
 import random
 import re
 import sys
 from collections import Counter
+from concurrent.futures import ProcessPoolExecutor
+from pathlib import Path
 from typing import Any
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -76,6 +80,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "MATRIX_RULES": True,          # les mutations d'evomol respectent les règles R1-R5
     "APPEND_ATOM_RULE": True,      # AppendAtomRuleMG remplace AddAtomMG
     "SUBSTITUTION_SHIFT": True,    # SubstituteShiftMG remplace SubstituteAtomMG
+    "SUBSTITUTION_NO_SHIFT": False,  # SubstituteShiftMG sans abaisser ni déplacer de double liaison
+    "R2_HETERO": False,            # R2 aussi pour N–N, N–O, O–O (deux atomes sans liaison multiple)
+    "R2_HETERO_OUTSIDE_RINGS": False,  # avec R2_HETERO : seulement hors cycle
     "GRAFT": True,                 # GraftFragmentMG
     "ANNELATE": True,              # AnnelateMG
     "FLIP_PATH": True,             # FlipAlternatingPathMG
@@ -129,6 +136,9 @@ def configure(config: dict[str, Any]) -> tuple[list[Evaluation], dict[str, Any]]
         flip_path=config["FLIP_PATH"], aromatize=config["AROMATIZE"],
         graft_fragments=config["GRAFT_FRAGMENTS"], annelation_fragments=config["ANNELATION_FRAGMENTS"],
         insert_carbon_keep_double=config.get("INSERT_CARBON_KEEP_DOUBLE", False),
+        substitution_no_shift=config.get("SUBSTITUTION_NO_SHIFT", False),
+        r2_hetero=config.get("R2_HETERO", False),
+        r2_hetero_outside_rings=config.get("R2_HETERO_OUTSIDE_RINGS", False),
     )
     key = (config["FILTER_HUCKEL"], config["MAX_SP3"], config["FILTER_REALISM"],
            config["FILTER_HETERO"], config["MAX_RING_N"])
@@ -170,6 +180,76 @@ def run_walks(config: dict[str, Any], n_walks: int, out_dir: str, n_jobs: int | 
         pw.run_walks(config, n_walks, out_dir, n_jobs)
     finally:
         pw._run_one = _PI_WALK_RUN_ONE  # pylint: disable=protected-access
+
+
+# ==============================================================================
+#  DÉTAIL DES MUTATIONS (celui de pi_walk, avec AppendAtomRuleMG)
+# ==============================================================================
+# AppendAtomRuleMG est détaillée comme AddAtomMG (élément et ordre de la liaison créée)
+DETAILED_ACTIONS = ["AddAtomMG", "AppendAtomRuleMG", "RemoveAtomMG", "ChangeBondMG"]
+
+
+def _details_one(task: tuple[dict[str, Any], int, str]) -> pd.DataFrame:
+    """pi_walk._details_one avec l'espace d'action de ce module (règles et nouvelles mutations)."""
+    config, k, out_dir = task
+    configure(config)  # même espace d'action que pendant la marche
+    space = {action.class_name(): action for action in MolecularGraph.action_space}
+    walk = pd.read_csv(Path(out_dir) / f"walk{k}.csv.gz", converters={"smiles": str})
+    rows = []
+    for t in range(1, len(walk)):
+        name = walk.action.iloc[t]
+        if name not in DETAILED_ACTIONS or name not in space:
+            continue
+        parent, child = Molecule(walk.smiles.iloc[t - 1]), walk.smiles.iloc[t]
+        graph = parent.get_representation(MolecularGraph)
+        action = None
+        for candidate in space[name].list_actions(parent):
+            try:
+                if candidate.apply_smiles() == child:
+                    action = candidate
+                    break
+            except Exception:  # pylint: disable=broad-except
+                continue
+        row = {"walk": k, "step": t, "action": name, "detail": None, "element": None,
+               "order_from": None, "order_to": None}
+        if action is None:
+            row["detail"] = "non retrouvée"
+        elif name in ("AddAtomMG", "AppendAtomRuleMG"):
+            row.update(element=action.atom_type, order_from=0, order_to=action.bond_order,
+                       detail=f"+{pw.BOND_SYMBOLS[action.bond_order]}{action.atom_type}")
+        elif name == "RemoveAtomMG":
+            element = graph.atom_type(action.atom_idx)
+            row.update(element=element, detail=f"−{element}")
+        else:
+            old = graph.bond_order(action.atom1, action.atom2)
+            row.update(element="".join(sorted([graph.atom_type(action.atom1), graph.atom_type(action.atom2)])),
+                       order_from=old, order_to=action.bond_type, detail=f"{old}→{action.bond_type}")
+        rows.append(row)
+    return pd.DataFrame(rows, columns=["walk", "step", "action", "detail", "element", "order_from", "order_to"])
+
+
+def mutation_details(out_dir: str | Path, n_jobs: int | None = None) -> pd.DataFrame:
+    """pi_walk.mutation_details pour les marches de ce module : détail de chaque AddAtomMG / AppendAtomRuleMG,
+    RemoveAtomMG et ChangeBondMG. Écrit out_dir/mutations_detail.csv et le renvoie."""
+    out_dir = Path(out_dir)
+    config = json.loads((out_dir / "config.json").read_text())
+    ks = sorted(load_meta(out_dir))
+    n_jobs = min(len(ks), n_jobs or max(1, (os.cpu_count() or 2) - 1))
+    with ProcessPoolExecutor(n_jobs, mp_context=multiprocessing.get_context("spawn")) as pool:
+        parts = list(pool.map(_details_one, [(config, k, str(out_dir)) for k in ks]))
+    details = pd.concat(parts, ignore_index=True)
+    details.to_csv(out_dir / "mutations_detail.csv", index=False)
+    return details
+
+
+def plot_mutation_details(experiments: dict[str, pd.DataFrame], save=None, min_label: float = 3.0) -> Any:
+    """pi_walk.plot_mutation_details, avec une barre de plus pour AppendAtomRuleMG."""
+    detailed = pw.DETAILED_ACTIONS
+    pw.DETAILED_ACTIONS = DETAILED_ACTIONS
+    try:
+        return pw.plot_mutation_details(experiments, save=save, min_label=min_label)
+    finally:
+        pw.DETAILED_ACTIONS = detailed
 
 
 # ==============================================================================

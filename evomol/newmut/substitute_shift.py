@@ -13,6 +13,11 @@ of reference_app.js).
   3. the first state whose result creates no new violation of the matrix rules
      is kept. If there is none, the action does not exist.
 
+Option SubstituteShiftMG.shift_bonds = False (setup_newmut_action_space(
+substitution_no_shift=True)): only the simple substitutions are kept (the new
+element accepts the sum of the row), as in SubstituteAtomMG; the rules still
+apply.
+
 The final state is computed when the actions are listed; apply_action replays
 the substitution and the bond changes.
 """
@@ -79,16 +84,23 @@ def _apply_path(matrix: Matrix, path: Path) -> Matrix:
 
 
 def shift_states(
-    types: Sequence[str], matrix: np.ndarray, atom: int, element: str
+    types: Sequence[str],
+    matrix: np.ndarray,
+    atom: int,
+    element: str,
+    shift: bool = True,
 ) -> list[Matrix]:
     """Candidate bond matrices after substituting atom by element, in the order
-    of reference_app.js (empty list: the valence cannot hold).
+    of reference_app.js (empty list: the valence cannot hold). shift=False:
+    empty list as soon as a bond order would have to be lowered.
 
     The diagonal of the returned matrices is that of the input matrix.
     """
     work: Matrix = matrix.tolist()
     n = len(types)
     excess = sum(work[atom][j] for j in range(n) if j != atom) - max_valence(element)
+    if excess > 0 and not shift:
+        return []
     holes: list[int] = []
     while excess > 0:
         multiple = sorted(
@@ -121,16 +133,17 @@ def substitute_with_shift(
     atom: int,
     element: str,
     allowed: Callable[[list[str], np.ndarray], bool] | None = None,
+    shift: bool = True,
 ) -> tuple[list[str], np.ndarray] | None:
     """First state (types, matrix) after the substitution that creates no new
-    violation, or None.
+    violation, or None. shift: see shift_states.
 
     allowed(new_types, new_matrix): check of a state (same answer as
     matrices_allowed against (types, matrix), which is the default).
     """
     new_types = list(types)
     new_types[atom] = element
-    for state in shift_states(types, matrix, atom, element):
+    for state in shift_states(types, matrix, atom, element, shift):
         new_matrix = np.array(state, dtype=np.int64)
         new_matrix[atom, atom] = VALENCE_ELECTRONS.get(element, 0)
         if (
@@ -146,6 +159,9 @@ class SubstituteShiftMG(RuleCheckedMixin, ActionMolGraph):
     """
     Substitute an atom, shifting the double bonds if needed.
     """
+
+    # False: no lowered bond order, only the simple substitutions
+    shift_bonds: bool = True
 
     def __init__(
         self,
@@ -231,7 +247,9 @@ class SubstituteShiftMG(RuleCheckedMixin, ActionMolGraph):
             for element in Molecule.accepted_atoms:
                 if element == types[atom]:
                     continue
-                result = substitute_with_shift(types, matrix, atom, element, allowed)
+                result = substitute_with_shift(
+                    types, matrix, atom, element, allowed, cls.shift_bonds
+                )
                 if result is None:
                     continue
                 new_matrix = result[1]
