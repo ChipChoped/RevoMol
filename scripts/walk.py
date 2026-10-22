@@ -5,7 +5,10 @@ from multiprocessing import Pool, Value, Array, Lock, Process
 from multiprocessing.sharedctypes import Synchronized
 from typing import cast, Tuple, Any
 
+from numpy import ndarray
 from rdkit import Chem
+from rdkit.Chem import rdMolDescriptors
+from scipy.special import softmax
 
 from evomol import default_parameters as dp
 from evomol import evaluation as evaluator
@@ -15,6 +18,35 @@ from evomol.evaluation import Function, ZincNormalizedLogP, NormalizedSAScore, C
 from evomol.representation import Molecule, MolecularGraph
 from evomol.search import enumeration as en
 from evomol.action import molecular_graph as mg
+
+
+def i_overlap(mol: Chem.Mol) -> float:
+    """Mean excess ring memberships per heavy atom."""
+    n_heavy = mol.GetNumHeavyAtoms()
+    if n_heavy == 0:
+        return 0.0
+
+    ring_info = mol.GetRingInfo()
+    memberships = (
+        ring_info.NumAtomRings(atom.GetIdx())
+        for atom in mol.GetAtoms()
+        if atom.GetAtomicNum() > 1
+    )
+    return sum(max(n_rings - 1, 0) for n_rings in memberships) / n_heavy
+
+
+def num_bridgehead_atoms(mol: Chem.Mol) -> int:
+    """RDKit bridgehead atoms: rings sharing at least two bonds."""
+    return rdMolDescriptors.CalcNumBridgeheadAtoms(mol)
+
+
+def num_spiro_atoms(mol: Chem.Mol) -> int:
+    """RDKit spiro atoms: rings sharing exactly one atom."""
+    return rdMolDescriptors.CalcNumSpiroAtoms(mol)
+
+
+def bridgehead_plus_spiro(mol: Chem.Mol) -> int:
+    return num_bridgehead_atoms(mol) + num_spiro_atoms(mol)
 
 
 def set_plogp_values(mol: Molecule) -> None:
@@ -112,16 +144,19 @@ def get_deep_neighborhood(neighborhood: list[tuple[str, list[Action]]]) -> list[
 
 def set_roulette_wheel_action_space(molecule: Molecule) -> None:
     # Check actions allowed
-    action_space = [action.class_name() for action in MolecularGraph.action_space]
+    action_space = MolecularGraph.action_space
 
-    if "ChangeBondMG" in action_space:
-        if random.randint(0, len(action_space) - 1) == 0:
-            MolecularGraph.action_space = [mg.ChangeBondMG]
+    if any(action in action_space for action in [mg.ChangeBondMG, mg.CreateCycleMG, mg.BreakCycleMG, mg.IncrementBondMG, mg.DecrementBondMG]):
+        actions = [action for action in action_space if action in
+                   [mg.ChangeBondMG, mg.CreateCycleMG, mg.BreakCycleMG, mg.IncrementBondMG, mg.DecrementBondMG]]
+
+        if random.randint(0, len(action_space) - 1) < len(actions):
+            MolecularGraph.action_space = [random.choice(actions)]
         else:
             molecule_size = molecule.get_representation(MolecularGraph).nb_atoms
 
-            if ("AddAtomMG" in action_space and
-                ("RemoveAtomMG" not in action_space or
+            if (mg.AddAtomMG in action_space and
+                (mg.RemoveAtomMG not in action_space or
                  random.randint(0, Molecule.max_heavy_atoms - 2) >= molecule_size - 1)):
                 MolecularGraph.action_space = [mg.AddAtomMG]
             else:
@@ -129,16 +164,55 @@ def set_roulette_wheel_action_space(molecule: Molecule) -> None:
     else:
         molecule_size = molecule.get_representation(MolecularGraph).nb_atoms
 
-        if ("AddAtomMG" in action_space and
-            ("RemoveAtomMG" not in action_space or
+        if (mg.AddAtomMG in action_space and
+            (mg.RemoveAtomMG not in action_space or
              random.randint(0, Molecule.max_heavy_atoms - 2) >= molecule_size - 1)):
             MolecularGraph.action_space = [mg.AddAtomMG]
         else:
             MolecularGraph.action_space = [mg.RemoveAtomMG]
 
 
+def get_roulette_wheel_cycles_restricted_neighborhood(neighborhood: list[tuple[str, list[Action]]])\
+    -> ndarray:
+    """
+    Returns the probabilities for each neighbor based on  a roulette wheel selection based on the number of Bridgehead
+    and Spiro atoms in the molecule.
+    The more Bridgehead and Spiro atoms, the less likely the molecule will be selected by using a softmax function.
+    The upper limit of Bridgehead and Spiro atoms are based on the maximums found in the ChEMBL dataset plus one to
+    leave some room for exploration.
+
+    Arg:
+        neighborhood (list[tuple[str, list[Action]]]): A list of tuples containing the SMILES of the neighbors and the
+        actions taken to reach them
+
+    Return:
+        list[float]: A list of probabilities for each neighbor
+    """
+
+    max_bridgehead_atoms = 4
+    max_spiro_atoms = 2
+
+    # Calculate the number of Bridgehead and Spiro atoms for each neighbor
+    bridgehead_spiro_counts = []
+    for neighbor in neighborhood:
+        mol = Chem.MolFromSmiles(neighbor[0])
+        bridgehead_spiro_counts.append((rdMolDescriptors.CalcNumBridgeheadAtoms(mol),
+                                        rdMolDescriptors.CalcNumSpiroAtoms(mol)))
+
+    # Calculate the softmax probabilities based on the number of Bridgehead and Spiro atoms
+    scores = []
+    for bridgehead_count, spiro_count in bridgehead_spiro_counts:
+        # Calculate a score that penalizes higher counts of Bridgehead and Spiro atoms
+        score = 0 if bridgehead_count < max_bridgehead_atoms else bridgehead_count - max_bridgehead_atoms
+        score += 0 if spiro_count < max_spiro_atoms else spiro_count - max_spiro_atoms
+
+        scores.append(- score)
+
+    return softmax(scores)
+
+
 def get_random_neighbor(start_smiles: str, only_valid: bool = True, depth: int = 1, seed: int = 0,
-                        roulette_wheel: bool = False) -> tuple[str, Action | None, int]:
+                        action_wheel: bool = False, cycle_wheel: bool = False) -> tuple[str, Action | None, int]:
     """
     Get a random neighbor for a molecule without looking if it is realistic.
 
@@ -147,7 +221,9 @@ def get_random_neighbor(start_smiles: str, only_valid: bool = True, depth: int =
         only_valid (bool): If true, only valid smiles will be returned.
         depth (int): The depth of the search
         seed (int): The seed for the random number generator
-        roulette_wheel (bool): If true, the mutation operators will be chosen with a probability proportional to the size of the molecule
+        action_wheel (bool): If true, the mutation operators will be chosen with a probability proportional to the
+        size of the molecule
+        cycle_wheel (bool): If true, the roulette wheel will be used to penalized too many bridgehead or spiro atoms
 
     Return:
         str: A random neighbor of the molecule
@@ -159,7 +235,7 @@ def get_random_neighbor(start_smiles: str, only_valid: bool = True, depth: int =
         Molecule(start_smiles).get_representation(MolecularGraph).canonical_smiles
     )
 
-    if roulette_wheel:
+    if action_wheel:
         whole_action_space: list[type[Action]] = MolecularGraph.action_space.copy()
         leftover_action_space: list[type[Action]] = MolecularGraph.action_space.copy()
         set_roulette_wheel_action_space(Molecule(can_smi_start))
@@ -172,6 +248,9 @@ def get_random_neighbor(start_smiles: str, only_valid: bool = True, depth: int =
     random.Random(seed).shuffle(neighborhood)
 
     while neighborhood == [] and len(leftover_action_space) > 1:
+        print(MolecularGraph.action_space[0])
+        print(leftover_action_space)
+        print(leftover_action_space[1] == MolecularGraph.action_space[0])
         leftover_action_space.remove(MolecularGraph.action_space[0])
         MolecularGraph.action_space = leftover_action_space
         set_roulette_wheel_action_space(Molecule(can_smi_start))
@@ -183,7 +262,7 @@ def get_random_neighbor(start_smiles: str, only_valid: bool = True, depth: int =
 
         random.Random(seed).shuffle(neighborhood)
 
-    if roulette_wheel:
+    if action_wheel:
         MolecularGraph.action_space = whole_action_space
 
     for _ in range(1, depth):
@@ -198,8 +277,13 @@ def get_random_neighbor(start_smiles: str, only_valid: bool = True, depth: int =
     if len(neighborhood) == 0:
         return "", None, 0
     else:
-        chosen_smiles, chosen_action = random.choice(list(neighborhood))
-        return chosen_smiles, chosen_action, len(neighborhood)
+        if cycle_wheel:
+            probabilities = get_roulette_wheel_cycles_restricted_neighborhood(neighborhood)
+            neighbor = random.choices(neighborhood, weights=probabilities)[0]
+        else:
+            neighbor = random.choice(list(neighborhood))
+
+        return neighbor[0], neighbor[1], len(neighborhood)
 
 
 def find_highest_fitness(lock: Lock, neighbors_indexes: list[int], neighborhood: list[tuple[str, list[Action]]],  # type: ignore
@@ -456,7 +540,8 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
 def walk(start_smiles: str, n_steps: int, action_space: list[Action],
          fitness_functions: list[Function], strategy: str = "random", evaluation_function: Function = None,
          aggregate_realism: bool = False, only_valid: bool = True, path: str = "results", seed: int = 0,
-         soft_change_bond: bool = False, depth: int = 1, beta: float = 1, roulette_wheel: bool = False)\
+         soft_change_bond: bool = False, depth: int = 1, beta: float = 1, action_wheel: bool = False,
+         cycle_wheel: bool = False)\
     -> tuple[list[str], list[bool], dict[str, list[float]]]:
     """
     Perform a random or adaptive walk with based on a starting molecule and a set of allowed actions.
@@ -476,7 +561,8 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
         soft_change_bond (bool): If True, bond breaking and formation won't be allowed (False by default)
         depth (int): Depth of the search
         beta (float): The beta parameter for aggregated walks (1. by default)
-        roulette_wheel (bool): If True, the roulette wheel will be used to choose which action to perform
+        action_wheel (bool): If True, the roulette wheel will be used to choose which action to perform
+        cycle_wheel (bool): If True, the roulette wheel will be used to penalized too many bridgehead or spiro atoms
 
     Returns:
         list[str]: The path took during the random walk (list of smiles)
@@ -520,7 +606,8 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
 
     with (open(path + "walk.csv", "a", newline='') as walk_file,
           open(path + "actions_neighborhood_size.csv", "a", newline='') as sizes_file,
-          open(path + "cycles.csv", "a", newline='') as cycles_file):
+          open(path + "cycles.csv", "a", newline='') as cycle_info_file,
+          open(path + "cycle_fitness.csv", "a", newline='') as cycle_fitness_file):
         walk_writer = csv.writer(walk_file, lineterminator='\n')
         walk_csv_row = ["smiles", "is_valid"]
         walk_csv_row.extend([function.name for function in fitness_functions])
@@ -529,9 +616,13 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
         sizes_csv_row = [action.class_name() for action in MolecularGraph.action_space]
         sizes_writer.writerow(sizes_csv_row)
 
-        cycles_writer = csv.writer(cycles_file, lineterminator='\n')
-        cycles_csv_row = ["cycles", "fused", "systems"]
-        cycles_writer.writerow(cycles_csv_row)
+        cycle_info_writer = csv.writer(cycle_info_file, lineterminator='\n')
+        cycle_info_csv_row = ["cycles", "fused", "systems"]
+        cycle_info_writer.writerow(cycle_info_csv_row)
+
+        cycle_fitness_writer = csv.writer(cycle_fitness_file, lineterminator='\n')
+        cycle_fitness_csv_row = ["i_overlap", "bridgehead", "spiro", "bridgehead+spiro"]
+        cycle_fitness_writer.writerow(cycle_fitness_csv_row)
 
         if aggregate_realism:
             walk_csv_row.append(evaluation_function.name + "-Silly_Walks")
@@ -570,7 +661,11 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
         sizes_csv_row = [neighborhood_sizes[action.class_name()] for action in MolecularGraph.action_space]
         sizes_writer.writerow(sizes_csv_row)
 
-        cycles_writer.writerow(get_cycles_info(start_smiles))
+        cycle_info_writer.writerow(get_cycles_info(start_smiles))
+
+        molecule = Chem.MolFromSmiles(start_smiles)
+        cycle_fitness_writer.writerow([i_overlap(molecule), num_bridgehead_atoms(molecule), num_spiro_atoms(molecule),
+                                       bridgehead_plus_spiro(molecule)])
 
         init_smiles: str = start_smiles
 
@@ -584,7 +679,8 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
                 neighbor, actions, neighborhood_size = get_random_neighbor(start_smiles=start_smiles,
                                                                            only_valid=only_valid,
                                                                            seed=seed,
-                                                                           roulette_wheel=roulette_wheel)
+                                                                           action_wheel=action_wheel,
+                                                                           cycle_wheel=cycle_wheel)
 
                 walk_csv_row.append(str(neighborhood_size))
                 walk_writer.writerow(walk_csv_row)
@@ -602,7 +698,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
                 neighbor, actions, neighbor_fitness, neighborhood_size =\
                     get_best_neighbor(start_smiles=start_smiles, fitness_function=evaluation_function,
                                       strategy=strategy, aggregate_realism=aggregate_realism, only_valid=only_valid,
-                                      depth=depth, beta=beta, seed=seed, roulette_wheel=roulette_wheel)
+                                      depth=depth, beta=beta, seed=seed, roulette_wheel=action_wheel)
 
                 walk_csv_row.append(str(neighborhood_size))
                 walk_writer.writerow(walk_csv_row)
@@ -701,7 +797,11 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
             sizes_csv_row = [neighborhood_sizes[action.class_name()] for action in MolecularGraph.action_space]
             sizes_writer.writerow(sizes_csv_row)
 
-            cycles_writer.writerow(get_cycles_info(neighbor))
+            cycle_info_writer.writerow(get_cycles_info(neighbor))
+
+            molecule = Chem.MolFromSmiles(neighbor)
+            cycle_fitness_writer.writerow([i_overlap(molecule), num_bridgehead_atoms(molecule), num_spiro_atoms(molecule),
+                                           bridgehead_plus_spiro(molecule)])
 
     if strategy in ["best_improv", "first_improv"]:
         with open(path + "local_optimum.csv", "a", newline='') as walk_file:

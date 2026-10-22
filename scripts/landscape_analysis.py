@@ -51,8 +51,10 @@ if __name__ == "__main__":
     parser.add_argument("-d", "--depth", type=int, help="Depth of the search", dest="depth", default=1)
     parser.add_argument("--beta", type=float, help="Beta parameter for aggregated walks",
                         dest="beta", default=1)
-    parser.add_argument("-w", "--roulette-wheel", action="store_true", dest="roulette_wheel",
+    parser.add_argument("--action-wheel", action="store_true", dest="action_wheel",
                         help="If set, the roulette wheel will be used to choose which action to perform",)
+    parser.add_argument("--cycle-wheel", action="store_true", dest="cycle_wheel",
+                        help="If set, the roulette wheel will be used to penalized too many bridgehead or spiro atoms",)
 
     arguments = parser.parse_args()
 
@@ -90,10 +92,15 @@ if __name__ == "__main__":
         evaluation_function = None
         evaluation_function_str: str = ""
 
-    if arguments.roulette_wheel:
-        roulette_wheel_str: str = "roulette_wheel/"
+    if arguments.action_wheel:
+        action_wheel_str: str = "action_wheel/"
     else:
-        roulette_wheel_str = ""
+        action_wheel_str = ""
+
+    if arguments.cycle_wheel:
+        cycle_wheel_str: str = "cycle_wheel/"
+    else:
+        cycle_wheel_str = ""
 
     molecules : DataFrame = pd.read_csv(arguments.input_file)
 
@@ -103,7 +110,8 @@ if __name__ == "__main__":
         smiles: str = row["final_molecule"]
 
         path = ("./results/" + arguments.strategy + "_walk/" + only_valid_str + "/" + str(arguments.depth) + "/" +
-                roulette_wheel_str + beta_str + smiles + "/" + str(path_actions).replace("', '", "_").replace("['", "")
+                action_wheel_str + cycle_wheel_str + beta_str + smiles + "/" +
+                str(path_actions).replace("', '", "_").replace("['", "")
                 .replace("']", "") + "/" + evaluation_function_str + seed)
 
         print()
@@ -117,7 +125,7 @@ if __name__ == "__main__":
                                 [Tanimoto, Levenshtein, GED, NormalizedGED],
                                 arguments.strategy, evaluation_function, arguments.aggregate_realism,
                                 arguments.only_valid, path, seed, arguments.soft_change_bond,
-                                arguments.depth, arguments.beta, arguments.roulette_wheel)
+                                arguments.depth, arguments.beta, arguments.action_wheel, arguments.cycle_wheel)
 
         print()
 
