@@ -18,6 +18,7 @@ import cairosvg
 import matplotlib.pyplot as plt
 from IPython.display import SVG, display
 from PIL import Image
+from mypy.types import Any
 from rdkit.Chem import Draw
 
 from evomol.representation import MolecularGraph, Molecule
@@ -29,6 +30,7 @@ def mol_to_svg(
     draw_index: bool = True,
     notes_on_atoms: Optional[dict[int, str]] = None,
     notes_on_bonds: Optional[dict[int, str]] = None,
+    highlight_atoms: Any | None = None
 ) -> str:
     """Convert a molecule to an SVG image. You can add notes on atoms and bonds.
 
@@ -41,6 +43,7 @@ def mol_to_svg(
             Format: {atom_index: note}. Defaults to None.
         notes_on_bonds (dict[int, str], optional): notes to add on bonds.
             Format: {bond_index: note}. Defaults to None.
+        highlight_atoms (Any, None): A list of atom indices to highlight.
 
     Returns:
         str: SVG image of the molecule.
@@ -65,7 +68,7 @@ def mol_to_svg(
             mol.GetBondWithIdx(bond_idx).SetProp("bondNote", note)
 
     # draw the molecule
-    d.DrawMolecule(mol)
+    d.DrawMolecule(mol, highlightAtoms=highlight_atoms)
     d.FinishDrawing()
 
     # get the SVG image and return it
@@ -155,7 +158,7 @@ def draw_multiple_svgs_in_matplotlib(
 
     if labels is not None:
         for label, ax, step in zip(labels, axes.flat, range(num_images)):
-            ax.set_xlabel("Step " + str(step) + "\n" + label_info + " = " + str(round(float(label), 4)), fontsize=18)
+            ax.set_xlabel(label, fontsize=15)
 
     # remove the axis for the empty subplots
     for j in range(len(png_datas), len(axes.flat)):
@@ -163,9 +166,9 @@ def draw_multiple_svgs_in_matplotlib(
         axes.flat[j].set_xticks([])
         axes.flat[j].set_yticks([])
 
-    plt.tight_layout()
+    # plt.tight_layout()
     if show:
         plt.show()
 
-    if save_to_path:
-        fig.savefig(save_to_path)
+    # if save_to_path:
+    #     fig.savefig(save_to_path)
