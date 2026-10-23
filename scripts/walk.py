@@ -191,20 +191,25 @@ def get_roulette_wheel_cycles_restricted_neighborhood(neighborhood: list[tuple[s
 
     max_bridgehead_atoms = 4
     max_spiro_atoms = 2
+    max_rings = 2
 
     # Calculate the number of Bridgehead and Spiro atoms for each neighbor
     bridgehead_spiro_counts = []
     for neighbor in neighborhood:
-        mol = Chem.MolFromSmiles(neighbor[0])
-        bridgehead_spiro_counts.append((rdMolDescriptors.CalcNumBridgeheadAtoms(mol),
-                                        rdMolDescriptors.CalcNumSpiroAtoms(mol)))
+        molecule = Chem.MolFromSmiles(neighbor[0])
+        info = molecule.GetRingInfo()
+
+        bridgehead_spiro_counts.append((rdMolDescriptors.CalcNumBridgeheadAtoms(molecule),
+                                        rdMolDescriptors.CalcNumSpiroAtoms(molecule),
+                                        max([info.NumAtomRings(atom.GetIdx()) for atom in molecule.GetAtoms()])))
 
     # Calculate the softmax probabilities based on the number of Bridgehead and Spiro atoms
     scores = []
-    for bridgehead_count, spiro_count in bridgehead_spiro_counts:
+    for bridgehead_count, spiro_count, ring_count in bridgehead_spiro_counts:
         # Calculate a score that penalizes higher counts of Bridgehead and Spiro atoms
         score = 0 if bridgehead_count < max_bridgehead_atoms else bridgehead_count - max_bridgehead_atoms
         score += 0 if spiro_count < max_spiro_atoms else spiro_count - max_spiro_atoms
+        score += 0 if ring_count < max_rings else ring_count - max_rings
 
         scores.append(- score)
 
