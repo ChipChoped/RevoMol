@@ -7,18 +7,35 @@ holds:
 - off the diagonal: the bond order (0 = no bond, 1, 2, 3).
 Hydrogens are implicit: H = valence - sum of the row off the diagonal.
 
-Rules (translated from csPairs, doubleCarbons, tangledRings of
-reference_app.js, the executable specification):
+Two versions of the rules (RULES_VERSION, set by setup_newmut_action_space).
+
+V1 (default since 2026-10-16, tuned in teste/parametrage_regles.ipynb). C, N
+and O have a tag: "t" (a triple bond), "d" (a double bond), "s" (only single
+bonds). A bond between two "s" atoms is judged by R2a, R2b or R2c:
 - R1: valence, the sum of a row never exceeds the maximum valence;
+- R2a: Cs-Cs refused;
+- R2b: Cs-Xs (X = N, O) refused unless X has another neighbour that is not a
+  Cs (a d or t atom, or another N / O): anisole and R-N(Ph)-Cs allowed, Cs-OH,
+  Cs-NH2 and an N / O that carries only Cs refused;
+- R2c: Xs-Ys (N-N, N-O, O-O) refused unless one of them is bonded to a d or t
+  atom;
+- exception of R2a, R2b, R2c: the bond lies on a cycle and each atom has
+  another neighbour that is d or t, or an O "s" bonded to a d or t atom
+  (EDOT allowed, 1,4-dioxane refused);
+- R3: a carbon carries at most one double bond;
+- R4 (R4a before 2026-10-16): two small rings (<= 8 atoms) share nothing, one atom or exactly one bond;
+- R4b: a large ring (> 8 atoms) can close flat (off by default: R4B);
+- R5: an "s" carbon carries at most 2 heavy atoms (at least 2 H).
+
+V0 (Regle_V0, the rules before 2026-10-16; translated from csPairs,
+doubleCarbons, tangledRings of reference_app.js, the executable
+specification): R1, R3, R4, R4b as above, and
 - R2: two "s" carbons (only single bonds) are not bonded, unless the bond lies
   on a cycle and each of them has another sp2 neighbour;
-- R3: a carbon carries at most one double bond;
-- R4a: two small rings (<= 8 atoms) share nothing, one atom or exactly one bond;
-- R4b: a large ring (> 8 atoms) can close flat;
 - R5 (not in reference_app.js): an "s" carbon never carries 4 heavy atoms.
 
-Options of R2 (not in reference_app.js, off by default, set by
-setup_newmut_action_space):
+Options of R2 of V0 (not in reference_app.js, off by default, set by
+setup_newmut_action_space; no effect in V1):
 - R2_HETERO: R2 also applies to the N-N, N-O and O-O bonds between two atoms
   that have only single bonds, with the same exception on cycles;
 - R2_HETERO_OUTSIDE_RINGS: with R2_HETERO, these bonds are refused only
@@ -70,7 +87,7 @@ ALLOWED_VALENCES: dict[str, tuple[int, ...]] = {
     "I": (1,),
 }
 
-# rings of at most SMALL_RING atoms are "small" (R4a), the others "large" (R4b)
+# rings of at most SMALL_RING atoms are "small" (R4), the others "large" (R4b)
 SMALL_RING = 8
 # R4b: tolerance on the sum of the turning angles (degrees)
 FLAT_TOLERANCE = 40
@@ -83,6 +100,17 @@ CACHE_SIZE = 100_000
 # options of R2 (see the module docstring)
 R2_HETERO = False
 R2_HETERO_OUTSIDE_RINGS = False
+# R4b is applied only when R4B is True (off by default, set by setup_newmut_action_space)
+R4B = False
+# version of the rules: "V1" (default) or "V0" (Regle_V0, before 2026-10-16)
+RULES_VERSION = "V2"
+RULES_VERSIONS = ("V0", "V1", "V2")
+# V1: heteroatoms of R2b and R2c
+R2_HETEROATOMS = ("N", "O")
+# V1, exception on cycles of R2: an "s" neighbour of these elements counts as a
+# d or t neighbour when it is itself bonded to a d or t atom (N added on
+# 2026-10-19: an N s plays the same role as an O s in R2)
+R2_RING_S_NEIGHBOURS = ("O", "N")
 
 _BOND_TYPES = {
     1: Chem.BondType.SINGLE,
@@ -104,9 +132,9 @@ class Violation(NamedTuple):
 ############################################################
 
 
-def rule_options() -> tuple[bool, bool]:
+def rule_options() -> tuple[bool, bool, bool, str]:
     """Options of the rules currently set (part of the cache keys)."""
-    return R2_HETERO, R2_HETERO_OUTSIDE_RINGS
+    return R2_HETERO, R2_HETERO_OUTSIDE_RINGS, R4B, RULES_VERSION
 
 
 def current_sulfur_valence() -> int:
@@ -447,7 +475,75 @@ def _is_s_hetero(graph: _Graph, i: int) -> bool:
 
 
 def r2_bond(graph: _Graph, a: int, b: int, in_ring: bool) -> Violation | None:
-    """R2: bond a-b between two "s" carbons, allowed only if it lies on a cycle
+    """R2 of the current version (RULES_VERSION) for the bond a-b: R2a, R2b or
+    R2c (V1), R2 (V0). Depends on the rows within distance 2 of a and b and on
+    whether the bond lies on a cycle (in_ring)."""
+    if RULES_VERSION == "V0":
+        return r2_bond_v0(graph, a, b, in_ring)
+    return r2_bond_v1(graph, a, b, in_ring)
+
+
+def _tag(graph: _Graph, i: int) -> str:
+    """V1 tag of C, N, O: "t" (a triple bond), "d" (a double bond), "s" (only
+    single bonds); "" for another element."""
+    if graph.types[i] not in ("C", "N", "O"):
+        return ""
+    row = graph.order[i]
+    orders = [row[j] for j in graph.adj[i]]
+    if 3 in orders:
+        return "t"
+    if 2 in orders:
+        return "d"
+    return "s"
+
+
+def _is_cs(graph: _Graph, v: int) -> bool:
+    return graph.types[v] == "C" and _tag(graph, v) == "s"
+
+
+def _ring_exception_v1(graph: _Graph, a: int, b: int, in_ring: bool) -> bool:
+    """V1: the bond lies on a cycle and each atom has another neighbour that is
+    d or t, or an "s" atom of R2_RING_S_NEIGHBOURS bonded to a d or t atom."""
+
+    def counts(v: int, x: int) -> bool:
+        tag = _tag(graph, v)
+        if tag in ("d", "t"):
+            return True
+        return (
+            tag == "s" and graph.types[v] in R2_RING_S_NEIGHBOURS
+            and any(w != x and _tag(graph, w) in ("d", "t") for w in graph.adj[v])
+        )
+
+    return in_ring and all(any(v != y and counts(v, x) for v in graph.adj[x]) for x, y in ((a, b), (b, a)))
+
+
+def r2_bond_v1(graph: _Graph, a: int, b: int, in_ring: bool) -> Violation | None:
+    """V1: R2a (Cs-Cs), R2b (Cs-Xs) or R2c (Xs-Ys) for the bond a-b between two
+    "s" atoms (see the module docstring)."""
+    if _tag(graph, a) != "s" or _tag(graph, b) != "s":
+        return None
+    type_a, type_b = graph.types[a], graph.types[b]
+    if type_a == "C" and type_b == "C":
+        rule, allowed = "R2a", False
+        message = f"C{a} et C{b} sont deux carbones s liés hors d'un cycle permis"
+    elif "C" in (type_a, type_b) and {type_a, type_b} - {"C"} <= set(R2_HETEROATOMS):
+        c, x = (a, b) if type_a == "C" else (b, a)
+        rule = "R2b"
+        allowed = any(w != c and not _is_cs(graph, w) for w in graph.adj[x])
+        message = f"C{c} (s) porte {graph.types[x]}{x} (s), qui n'a pas d'autre voisin qu'un C s"
+    elif type_a in R2_HETEROATOMS and type_b in R2_HETEROATOMS:
+        rule = "R2c"
+        allowed = any(_tag(graph, w) in ("d", "t") for x, y in ((a, b), (b, a)) for w in graph.adj[x] if w != y)
+        message = f"{type_a}{a} et {type_b}{b} sont deux hétéroatomes s liés, aucun n'étant relié à un atome d ou t"
+    else:
+        return None
+    if allowed or _ring_exception_v1(graph, a, b, in_ring):
+        return None
+    return Violation(rule, (min(a, b), max(a, b)), message)
+
+
+def r2_bond_v0(graph: _Graph, a: int, b: int, in_ring: bool) -> Violation | None:
+    """V0 (Regle_V0) R2: bond a-b between two "s" carbons, allowed only if it lies on a cycle
     (in_ring) and each of them has another sp2 neighbour (csPairs of
     reference_app.js). Option R2_HETERO: same for two N / O with only single
     bonds (R2_HETERO_OUTSIDE_RINGS: always allowed on a cycle). Depends on the
@@ -481,7 +577,19 @@ def r3_atom(graph: _Graph, i: int) -> Violation | None:
 
 
 def r5_atom(graph: _Graph, i: int) -> Violation | None:
-    """R5: an "s" carbon (sp3) never carries 4 heavy atoms (no quaternary
+    """R5 of the current version (RULES_VERSION). V1: an "s" carbon carries at
+    most 2 heavy atoms (at least 2 H: no branched CH, no quaternary carbon)."""
+    if RULES_VERSION == "V0":
+        return r5_atom_v0(graph, i)
+    if graph.is_s_carbon(i) and len(graph.adj[i]) >= 3:
+        return Violation(
+            "R5", (i,), f"C{i} est un carbone s qui porte {len(graph.adj[i])} atomes lourds (moins de 2 H)"
+        )
+    return None
+
+
+def r5_atom_v0(graph: _Graph, i: int) -> Violation | None:
+    """V0 (Regle_V0) R5: an "s" carbon (sp3) never carries 4 heavy atoms (no quaternary
     carbon: neopentane, tert-butyl, spiro centre, fourth ring on a carbon)."""
     if graph.is_s_carbon(i) and len(graph.adj[i]) >= 4:
         return Violation("R5", (i,), f"C{i} est un carbone s qui porte {len(graph.adj[i])} atomes lourds")
@@ -501,7 +609,7 @@ def split_rings(rings: list[list[int]]) -> tuple[list[list[int]], list[list[int]
 
 
 def r4a_violations(graph: _Graph, small: list[list[int]], small_sets: list[set[int]]) -> list[Violation]:
-    """R4a: two small rings share nothing, one atom, or exactly one bond.
+    """R4 (formerly R4a): two small rings share nothing, one atom, or exactly one bond.
     Depends only on the ring bonds."""
     violations = []
     for i, ring_i in enumerate(small):
@@ -510,7 +618,7 @@ def r4a_violations(graph: _Graph, small: list[list[int]], small_sets: list[set[i
             if len(shared) > 2 or (len(shared) == 2 and not graph.order[shared[0]][shared[1]]):
                 violations.append(
                     Violation(
-                        "R4a",
+                        "R4",
                         tuple(shared),
                         f"cycles emmêlés : deux cycles partagent {len(shared)} atomes au lieu d'une "
                         "seule liaison",
@@ -523,7 +631,10 @@ def r4b_ring(
     graph: _Graph, ring: list[int], small: list[list[int]], small_sets: list[set[int]]
 ) -> Violation | None:
     """R4b: a large ring must close flat (tangledRings of reference_app.js).
-    Depends on the small rings and on the rows of the atoms of the ring."""
+    Depends on the small rings and on the rows of the atoms of the ring.
+    Always None when R4B is False (rule off, the default)."""
+    if not R4B:
+        return None
 
     def rings_with(*atoms: int) -> list[list[int]]:
         return [r for r, r_set in zip(small, small_sets) if all(x in r_set for x in atoms)]
@@ -592,7 +703,7 @@ def _violations_from_key(
     data: bytes,
     n: int,
     sulfur_valence: int,
-    options: tuple[bool, bool],  # pylint: disable=unused-argument  # cache key only
+    options: tuple[bool, bool, bool, str],  # pylint: disable=unused-argument  # cache key only
 ) -> tuple[Violation, ...]:
     return tuple(all_violations(_graph_from_key(types, data, n), sulfur_valence))
 
@@ -621,7 +732,7 @@ def is_valid(
 def rule_counts(
     types: Sequence[str], matrix: np.ndarray, sulfur_valence: int | None = None
 ) -> tuple[int, int]:
-    """(number of R1 violations, number of R2 + R3 + R4 + R5 violations)."""
+    """(number of R1 violations, number of violations of the other rules)."""
     violations = rule_violations(types, matrix, sulfur_valence)
     nb_r1 = sum(1 for v in violations if v.rule_id == "R1")
     return nb_r1, len(violations) - nb_r1

@@ -61,10 +61,10 @@ def nb_actions() -> dict[str, list[int]]:
 
 @pytest.mark.parametrize("options", DEFAULT_OPTIONS)
 def test_same_action_space(options: dict) -> None:
-    """Without new option: same action space, same number of actions."""
+    """Without new option (and with the AddAtomMG of evomol): same action space, same number of actions."""
     dp.setup_default_action_space(**options)
     expected = (snapshot(), nb_actions())
-    setup_newmut_action_space(**options)
+    setup_newmut_action_space(**options, evomol_add_atom=True)
     assert (snapshot(), nb_actions()) == expected
 
 
@@ -72,7 +72,6 @@ def test_all_options() -> None:
     """All options: replaced, wrapped and added actions."""
     setup_newmut_action_space(
         matrix_rules=True,
-        append_atom_rule=True,
         substitution_shift=True,
         graft=True,
         annelate=True,
@@ -81,7 +80,7 @@ def test_all_options() -> None:
     )
     names = [action.class_name() for action in MolecularGraph.action_space]
     assert names == [
-        "AppendAtomRuleMG",
+        "AddAtomMG",
         "ChangeBondMG",
         "CutAtomMG",
         "InsertCarbonMG",

@@ -75,7 +75,7 @@ def valid_molecules(n: int, length: int, seed: int) -> list[str]:
     from evomol.newmut.neighborhood_strategy import draw_allowed_action  # pylint: disable=import-outside-toplevel
 
     setup_newmut_action_space(
-        matrix_rules=True, append_atom_rule=True, substitution_shift=True, graft=True,
+        matrix_rules=True, substitution_shift=True, graft=True,
         annelate=True, flip_path=True, aromatize=True, insert_carbon_keep_double=True,
     )
     rng = random.Random(seed)
@@ -102,7 +102,7 @@ def all_rule_classes() -> list[type[Action]]:
         with_add_group=True,
         with_remove_group=True,
         matrix_rules=True,
-        append_atom_rule=False,
+        evomol_add_atom=True,  # AddAtomMG of evomol restricted by the rules (the one of newmut comes below)
         substitution_shift=False,
         graft=True,
         annelate=True,
@@ -111,11 +111,11 @@ def all_rule_classes() -> list[type[Action]]:
     )
     space = list(MolecularGraph.action_space)
     setup_newmut_action_space(
-        matrix_rules=True, append_atom_rule=True, substitution_shift=True, insert_carbon_keep_double=True
+        matrix_rules=True, substitution_shift=True, insert_carbon_keep_double=True
     )
     return space + [
         action for action in MolecularGraph.action_space
-        if action.class_name() in ("AppendAtomRuleMG", "SubstituteShiftMG")
+        if action.class_name() in ("AddAtomMG", "SubstituteShiftMG")
         or getattr(action, "inner_class", None).__name__ == "InsertCarbonDoubleMG"
     ]
 
@@ -161,6 +161,7 @@ def test_same_answer_r2_hetero(molecules: list[str], outside_rings: bool) -> Non
 
     classes = all_rule_classes()
     mr.R2_HETERO, mr.R2_HETERO_OUTSIDE_RINGS = True, outside_rings
+    mr.RULES_VERSION = "V0"  # the R2_HETERO options belong to V0
     try:
         mismatches = []
         for smiles in molecules[::2]:
@@ -172,6 +173,45 @@ def test_same_answer_r2_hetero(molecules: list[str], outside_rings: bool) -> Non
         assert not mismatches, mismatches[:10]
     finally:
         mr.R2_HETERO, mr.R2_HETERO_OUTSIDE_RINGS = False, False
+        mr.RULES_VERSION = "V1"
+
+
+def test_same_answer_v0(molecules: list[str]) -> None:
+    """Same agreement with the rules V0 (Regle_V0)."""
+    from evomol.newmut import matrix_rules as mr  # pylint: disable=import-outside-toplevel
+
+    classes = all_rule_classes()
+    mr.RULES_VERSION = "V0"
+    try:
+        mismatches = []
+        for smiles in molecules[::2]:
+            for action_class in classes:
+                fast = flags(action_class, smiles, fast=True)
+                slow = flags(action_class, smiles, fast=False)
+                assert [a for a, _ in fast] == [a for a, _ in slow]
+                mismatches += [(a, f, s) for (a, f), (_, s) in zip(fast, slow) if f != s]
+        assert not mismatches, mismatches[:10]
+    finally:
+        mr.RULES_VERSION = "V1"
+
+
+def test_same_answer_r4b(molecules: list[str]) -> None:
+    """Same agreement with the rule R4b on (off by default)."""
+    from evomol.newmut import matrix_rules as mr  # pylint: disable=import-outside-toplevel
+
+    classes = all_rule_classes()
+    mr.R4B = True
+    try:
+        mismatches = []
+        for smiles in molecules[::2]:
+            for action_class in classes:
+                fast = flags(action_class, smiles, fast=True)
+                slow = flags(action_class, smiles, fast=False)
+                assert [a for a, _ in fast] == [a for a, _ in slow]
+                mismatches += [(a, f, s) for (a, f), (_, s) in zip(fast, slow) if f != s]
+        assert not mismatches, mismatches[:10]
+    finally:
+        mr.R4B = False
 
 
 def test_fast_is_used() -> None:
@@ -184,11 +224,25 @@ def test_fast_is_used() -> None:
             assert fast_rules.matrix_effect(action, parent.types, parent.matrix) is not None
 
 
-def test_prefilters_are_refusals(molecules: list[str]) -> None:
+@pytest.mark.parametrize("r4b", (False, True))
+def test_prefilters_are_refusals(molecules: list[str], r4b: bool) -> None:
     """Every action skipped by a prefilter is refused by the original check,
-    and the prefilters do skip actions on the molecules within the rules."""
+    and the prefilters do skip actions on the molecules within the rules
+    (R4b off, the default, and on: prefilter A)."""
+    from evomol.newmut import matrix_rules as mr  # pylint: disable=import-outside-toplevel
+
+    classes = all_rule_classes()
+    mr.R4B = r4b
+    try:
+        _check_prefilters(classes, molecules)
+    finally:
+        mr.R4B = False
+
+
+def _check_prefilters(classes: list[type[Action]], molecules: list[str]) -> None:
+    """Prefilter check of test_prefilters_are_refusals, with the current rules."""
     nb_skipped = 0
-    for action_class in all_rule_classes():
+    for action_class in classes:
         for smiles in molecules:
             molecule = Molecule(smiles)
             fast_rules.clear_cache()

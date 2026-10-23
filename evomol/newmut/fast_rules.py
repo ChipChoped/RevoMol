@@ -9,11 +9,12 @@ rule_filtered.action_is_allowed), obtained in two ways:
    without RDKit, for the actions whose effect is a simple matrix edit;
 2. only the rules around the change are recomputed (ParentRules.allowed_after):
    - R1, R3, R5 depend on the row of one atom: only the changed rows;
-   - R2 (bond between two s carbons) depends on the rows within distance 2 of
-     the bond and on whether the bond lies on a cycle: only the bonds near the
-     changed atoms, and those whose ring membership changed;
+   - R2 (V0: bond between two s carbons; V1: R2a, R2b, R2c, bond between two
+     s atoms) depends on the rows within distance 2 of the bond and on whether
+     the bond lies on a cycle: only the bonds near the changed atoms, and those
+     whose ring membership changed;
    - R4 depends on the ring bonds: if they are the same, the rings are the same
-     (R4a unchanged) and only the large rings that contain a changed atom are
+     (R4 unchanged) and only the large rings that contain a changed atom are
      checked again (R4b); otherwise everything is recomputed.
 
 The equivalence with the original check is tested on every action of many
@@ -115,8 +116,9 @@ class ParentRules:
 
         A. a single bond created with an s carbon, between two atoms more than
            mr.SMALL_RING - 1 bonds apart: the s carbon ends up in a large ring
-           (R4b, which refuses any s carbon in a large ring; if R4b changes, the
-           equivalence test of tests/newmut/test_fast_rules.py catches it);
+           (R4b, which refuses any s carbon in a large ring; only when R4b is on,
+           mr.R4B; if R4b changes, the equivalence test of
+           tests/newmut/test_fast_rules.py catches it);
         C. a 4th heavy atom bonded by a single bond to an s carbon that already
            carries 3 (R5): atom added, fragment grafted or fused, group moved,
            bond created;
@@ -141,7 +143,8 @@ class ParentRules:
             i, j = action.atom1, action.atom2
             order = graph.order[i][j]
             if order == 0 and action.bond_type == 1:
-                if (graph.is_s_carbon(i) or graph.is_s_carbon(j)) and self.distance(i, j) + 1 > mr.SMALL_RING:
+                if (mr.R4B and (graph.is_s_carbon(i) or graph.is_s_carbon(j))
+                        and self.distance(i, j) + 1 > mr.SMALL_RING):
                     return True  # A
                 return four_on_s(i) or four_on_s(j)  # C
             if order == 2 and action.bond_type == 1 and (min(i, j), max(i, j)) in self.bridges:

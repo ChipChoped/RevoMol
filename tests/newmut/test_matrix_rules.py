@@ -4,6 +4,8 @@ Tests for the validity rules read on the bond-order matrix (newmut).
 The tables are those of the specification (§2.2 to §2.5).
 """
 
+from typing import Iterator
+
 import numpy as np
 import pytest
 from rdkit import Chem
@@ -20,6 +22,26 @@ def setup_parameters() -> None:
         accepted_atoms=["C", "O", "N", "F", "S"],
         max_heavy_atoms=38,
     )
+
+
+@pytest.fixture
+def rules_v0() -> Iterator[None]:
+    """Rules V0 (Regle_V0, before 2026-10-16) during the test."""
+    mr.RULES_VERSION = "V0"
+    try:
+        yield
+    finally:
+        mr.RULES_VERSION = "V1"
+
+
+@pytest.fixture
+def r4b_on() -> Iterator[None]:
+    """Rule R4b on during the test (off by default)."""
+    mr.R4B = True
+    try:
+        yield
+    finally:
+        mr.R4B = False
 
 
 def rule_ids(smiles: str) -> set[str]:
@@ -139,8 +161,8 @@ def test_r1_sulfur_valence() -> None:
         pytest.param("C1COc2cscc2OC1", False, id="ProDOT"),
     ),
 )
-def test_r2(smiles: str, valid: bool) -> None:
-    """R2 table of the specification."""
+def test_r2(smiles: str, valid: bool, rules_v0: None) -> None:  # pylint: disable=unused-argument
+    """R2 table of the specification (V0)."""
     assert ("R2" not in rule_ids(smiles)) == valid
 
 
@@ -158,8 +180,10 @@ def test_r2(smiles: str, valid: bool) -> None:
         pytest.param("C1=CNNC=C1", True, True, True, id="1,2-dihydropyridazine (ring, sp2 neighbours)"),
     ),
 )
-def test_r2_hetero(smiles: str, off: bool, hetero: bool, outside_rings: bool) -> None:
-    """Options R2_HETERO and R2_HETERO_OUTSIDE_RINGS: validity for R2 without
+def test_r2_hetero(  # pylint: disable=unused-argument
+    smiles: str, off: bool, hetero: bool, outside_rings: bool, rules_v0: None
+) -> None:
+    """Options R2_HETERO and R2_HETERO_OUTSIDE_RINGS (V0): validity for R2 without
     option, with R2_HETERO, with both."""
     try:
         for r2_hetero, r2_outside, valid in ((False, False, off), (True, False, hetero), (True, True, outside_rings)):
@@ -167,6 +191,41 @@ def test_r2_hetero(smiles: str, off: bool, hetero: bool, outside_rings: bool) ->
             assert ("R2" not in rule_ids(smiles)) == valid, (r2_hetero, r2_outside)
     finally:
         mr.R2_HETERO, mr.R2_HETERO_OUTSIDE_RINGS = False, False
+
+
+########################################
+#   R2a, R2b, R2c (V1, the default)
+########################################
+@pytest.mark.parametrize(
+    ("smiles", "expected"),
+    (
+        pytest.param("CC", {"R2a"}, id="ethane"),
+        pytest.param("Cc1ccccc1", set(), id="toluene"),
+        pytest.param("COc1ccccc1", set(), id="anisole (O carries a d atom)"),
+        pytest.param("CN(C)c1ccccc1", set(), id="N,N-dimethylaniline"),
+        pytest.param("CO", {"R2b"}, id="methanol (Cs-OH)"),
+        pytest.param("CN", {"R2b"}, id="methylamine (Cs-NH2)"),
+        pytest.param("CNC", {"R2b"}, id="dimethylamine (N carries only Cs)"),
+        pytest.param("C1=CCNCC=C1", {"R2b"}, id="N between two Cs in a ring"),
+        pytest.param("C1=CNNCC=C1", set(), id="Cs-N-N=, N-N with a d neighbour"),
+        pytest.param("NNc1ccccc1", set(), id="phenylhydrazine"),
+        pytest.param("NN", {"R2c"}, id="hydrazine"),
+        pytest.param("C1COc2cscc2O1", set(), id="EDOT (ring exception, conjugated O)"),
+        pytest.param("C1COCCO1", {"R2a", "R2b"}, id="1,4-dioxane"),
+        pytest.param("C2=C1OCCOC1C=S2", {"R2a", "R2b"}, id="O bonded to two Cs"),
+        pytest.param("C1COc2cscc2OC1", {"R2a"}, id="ProDOT"),
+        pytest.param("C1Cc2ccccc2C=C1", set(), id="1,2-dihydronaphthalene"),
+        pytest.param("C1CCOC1", {"R2a", "R2b"}, id="THF"),
+    ),
+)
+def test_r2_v1(smiles: str, expected: set[str]) -> None:
+    """V1: R2a (Cs-Cs), R2b (Cs-N / Cs-O), R2c (N / O - N / O)."""
+    assert rule_ids(smiles) & {"R2a", "R2b", "R2c"} == expected
+
+
+def test_rules_version_default() -> None:
+    """V1 is the default version."""
+    assert mr.RULES_VERSION == "V1"
 
 
 ########################################
@@ -199,9 +258,9 @@ def test_r3(smiles: str, valid: bool) -> None:
         pytest.param("c1cc2cccc3c4cccc5cccc(c(c1)c23)c54", set(), id="perylene"),
         pytest.param("c1ccc2cccc2cc1", set(), id="azulene"),
         pytest.param("c1cc2ccc3cccc4ccc(c1)c2c34", set(), id="pyrene"),
-        pytest.param("c1cc2cc3ccc2cc13", {"R4a"}, id="bridged naphthalene"),
-        pytest.param("C1=CC2C=CC1C2", {"R4a"}, id="norbornadiene"),
-        pytest.param("c1ccc2c(c1)C1c3ccccc3C2c2ccccc21", {"R4a"}, id="triptycene"),
+        pytest.param("c1cc2cc3ccc2cc13", {"R4"}, id="bridged naphthalene"),
+        pytest.param("C1=CC2C=CC1C2", {"R4"}, id="norbornadiene"),
+        pytest.param("c1ccc2c(c1)C1c3ccccc3C2c2ccccc21", {"R4"}, id="triptycene"),
         pytest.param(
             "C1=CC2=NC1=CC1=CC=C(C=C3C=CC(=N3)C=C3C=CC(=C2)N3)N1",
             set(),
@@ -218,12 +277,18 @@ def test_r3(smiles: str, valid: bool) -> None:
         pytest.param("c1cc2ccc1CCc1ccc(cc1)CC2", {"R4b"}, id="[2.2]paracyclophane"),
     ),
 )
-def test_r4(smiles: str, expected: set[str]) -> None:
-    """R4 table of the specification."""
-    assert rule_ids(smiles) & {"R4a", "R4b"} == expected
+def test_r4(smiles: str, expected: set[str], r4b_on: None) -> None:  # pylint: disable=unused-argument
+    """R4 table of the specification (R4b on)."""
+    assert rule_ids(smiles) & {"R4", "R4b"} == expected
 
 
-def test_r4b_turning_angles() -> None:
+def test_r4b_off_by_default() -> None:
+    """R4b is off by default: [10]annulene breaks no rule."""
+    assert not mr.R4B
+    assert "R4b" not in rule_ids("C1=CC=CC=CC=CC=C1")
+
+
+def test_r4b_turning_angles(r4b_on: None) -> None:  # pylint: disable=unused-argument
     """[10]annulene: the turning angles sum to 600°, [6]CPP to 0°."""
     messages = [
         v.message
@@ -301,6 +366,22 @@ def test_rule_violations_cache() -> None:
         pytest.param("CC1(C)C=CC=C1", False, id="5,5-dimethylcyclopentadiene"),
     ),
 )
-def test_r5(smiles: str, valid: bool) -> None:
-    """R5: an s carbon never carries 4 heavy atoms."""
+def test_r5(smiles: str, valid: bool, rules_v0: None) -> None:  # pylint: disable=unused-argument
+    """R5 (V0): an s carbon never carries 4 heavy atoms."""
+    assert ("R5" not in rule_ids(smiles)) == valid
+
+
+@pytest.mark.parametrize(
+    ("smiles", "valid"),
+    (
+        pytest.param("CC", True, id="ethane (CH3)"),
+        pytest.param("C1Cc2ccccc2C=C1", True, id="CH2 in a ring"),
+        pytest.param("CC(C)C", False, id="isobutane (CH with 3 heavy atoms)"),
+        pytest.param("CC(C)(C)C", False, id="neopentane"),
+        pytest.param("c1ccc2c(c1)C1c3ccccc3C2c2ccccc21", False, id="triptycene (CH bridgeheads)"),
+        pytest.param("C=C(C)C", True, id="isobutene (not an s carbon)"),
+    ),
+)
+def test_r5_v1(smiles: str, valid: bool) -> None:
+    """R5 (V1): an s carbon carries at most 2 heavy atoms (at least 2 H)."""
     assert ("R5" not in rule_ids(smiles)) == valid

@@ -2,8 +2,10 @@
 Action space with the new mutations (newmut).
 
 setup_newmut_action_space first calls default_parameters.setup_default_action_space
-with the same arguments, then applies the new options. With all the new
-options left to False, the action space is exactly the default one.
+with the same arguments, then applies the new options. The AddAtomMG of
+newmut (newmut.add_atom) replaces the one of evomol unless
+evomol_add_atom=True; with evomol_add_atom=True and all the new options left to
+False, the action space is exactly the default one.
 """
 
 from __future__ import annotations
@@ -13,8 +15,8 @@ from evomol.action import Action
 from evomol.action import molecular_graph as mg
 from evomol.newmut import matrix_rules as mr
 from evomol.newmut import rule_filtered as rf
+from evomol.newmut.add_atom import AddAtomMG
 from evomol.newmut.annelate import AnnelateMG
-from evomol.newmut.append_atom_rule import AppendAtomRuleMG
 from evomol.newmut.aromatize import AromatizeMG
 from evomol.newmut.flip_path import FlipAlternatingPathMG
 from evomol.newmut.fragments import ANNELATION_FRAGMENTS, GRAFT_FRAGMENTS, parse_fragment
@@ -44,7 +46,6 @@ def setup_newmut_action_space(
     add_atom_multiple_bonds: bool = False,
     bond_change_by_one: bool = False,
     matrix_rules: bool = False,
-    append_atom_rule: bool = False,
     substitution_shift: bool = False,
     graft: bool = False,
     annelate: bool = False,
@@ -56,6 +57,10 @@ def setup_newmut_action_space(
     substitution_no_shift: bool = False,
     r2_hetero: bool = False,
     r2_hetero_outside_rings: bool = False,
+    r4b: bool = False,
+    rules_version: str = "V1",
+    evomol_add_atom: bool = False,
+    substitution_raise: bool = True,
 ) -> None:
     """Set the action space of evomol with the new mutations.
 
@@ -64,9 +69,8 @@ def setup_newmut_action_space(
         avoid_bond_forming, avoid_sp3_on_sp3, add_atom_multiple_bonds,
         bond_change_by_one: same as default_parameters.setup_default_action_space.
         matrix_rules: the existing actions only list the actions whose result
-            creates no new violation of the matrix rules (R1 to R4, see
+            creates no new violation of the matrix rules (R1 to R5, see
             newmut.matrix_rules). The new actions always apply the rules.
-        append_atom_rule: AppendAtomRuleMG replaces AddAtomMG.
         substitution_shift: SubstituteShiftMG replaces SubstituteAtomMG.
         graft: add GraftFragmentMG.
         annelate: add AnnelateMG.
@@ -89,9 +93,24 @@ def setup_newmut_action_space(
             the carbons). False: original behaviour.
         r2_hetero_outside_rings: with r2_hetero, these bonds are refused only
             outside the cycles. No effect without r2_hetero.
+        r4b: apply rule R4b (a large ring must close flat). False (default):
+            R4b is off.
+        rules_version: version of the matrix rules, "V1" (default: R2a, R2b,
+            R2c, R5 = at least 2 H on an s carbon) or "V0" (Regle_V0, the
+            rules before 2026-10-16). See newmut.matrix_rules.
+        evomol_add_atom: keep the AddAtomMG of evomol (single bond, or
+            multiple bonds with add_atom_multiple_bonds; no rule unless
+            matrix_rules). False (default): the AddAtomMG of newmut
+            (newmut.add_atom, formerly AppendAtomRuleMG) replaces it: single,
+            double or triple bond on the matrix, never a C by a single bond on
+            an s carbon, and the matrix rules always apply.
+        substitution_raise: SubstituteShiftMG also proposes the substitutions
+            where one bond of the atom goes up, when the new element accepts
+            more bonds (O s -> N d, O s -> C d, N s -> C d, O d -> N t...).
+            True (default); False: no raised bond.
 
-    With all the new options left to False, the action space is the one of
-    setup_default_action_space.
+    With all the new options left to False and evomol_add_atom=True, the action
+    space is the one of setup_default_action_space.
 
     Raises:
         ValueError: a fragment SMILES is not readable or has a wrong number of
@@ -112,8 +131,13 @@ def setup_newmut_action_space(
     rf.clear_cache()
 
     SubstituteShiftMG.shift_bonds = not substitution_no_shift
+    SubstituteShiftMG.raise_bonds = substitution_raise
     mr.R2_HETERO = r2_hetero
     mr.R2_HETERO_OUTSIDE_RINGS = r2_hetero_outside_rings
+    mr.R4B = r4b
+    if rules_version not in mr.RULES_VERSIONS:
+        raise ValueError(f"rules_version {rules_version!r} not in {mr.RULES_VERSIONS}")
+    mr.RULES_VERSION = rules_version
 
     GraftFragmentMG.fragments = dict(
         GRAFT_FRAGMENTS if graft_fragments is None else graft_fragments
@@ -133,8 +157,8 @@ def setup_newmut_action_space(
                 )
 
     space: list[type[Action]] = list(MolecularGraph.action_space)
-    if append_atom_rule:
-        space = _replace(space, mg.AddAtomMG, AppendAtomRuleMG)
+    if not evomol_add_atom:
+        space = _replace(space, mg.AddAtomMG, AddAtomMG)
     if substitution_shift:
         space = _replace(space, mg.SubstituteAtomMG, SubstituteShiftMG)
     if insert_carbon_keep_double and mg.InsertCarbonMG in space:

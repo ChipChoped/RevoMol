@@ -10,7 +10,7 @@ import pytest
 
 from evomol import default_parameters as dp
 from evomol.newmut.annelate import AnnelateMG
-from evomol.newmut.append_atom_rule import AppendAtomRuleMG
+from evomol.newmut.add_atom import AddAtomMG
 from evomol.newmut.flip_path import FlipAlternatingPathMG
 from evomol.newmut.graft import GraftFragmentMG
 from evomol.newmut.matrix_diff import (
@@ -70,7 +70,7 @@ def test_mcs_identity() -> None:
 @pytest.mark.parametrize(
     ("action_class", "smiles", "expected"),
     (
-        pytest.param(AppendAtomRuleMG, "Cc1ccccc1", "append", id="AppendAtomRule"),
+        pytest.param(AddAtomMG, "Cc1ccccc1", "append", id="AddAtom"),
         pytest.param(GraftFragmentMG, "C1=CSC=C1", "graft", id="GraftFragment"),
         pytest.param(AnnelateMG, "C1=CSC=C1", "annel", id="Annelate"),
         pytest.param(FlipAlternatingPathMG, "CC1=CC=C(C)S1", "flip", id="FlipAlternatingPath"),

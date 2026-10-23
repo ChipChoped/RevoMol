@@ -8,8 +8,8 @@ setup_newmut_action_space). Documentation: evomol/newmut/README.md.
 """
 
 # flake8: noqa
+from .add_atom import AddAtomMG as AddAtomMG
 from .annelate import AnnelateMG as AnnelateMG
-from .append_atom_rule import AppendAtomRuleMG as AppendAtomRuleMG
 from .aromatize import AromatizeMG as AromatizeMG
 from .default_parameters import setup_newmut_action_space as setup_newmut_action_space
 from .evolutionary_algorithm import EvolutionaryAlgorithmNewMut as EvolutionaryAlgorithmNewMut

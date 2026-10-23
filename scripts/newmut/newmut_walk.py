@@ -78,11 +78,13 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "ACCEPTED_ATOMS": ["C", "O", "N"],
     # ── nouvelles mutations (evomol/newmut)
     "MATRIX_RULES": True,          # les mutations d'evomol respectent les règles R1-R5
-    "APPEND_ATOM_RULE": True,      # AppendAtomRuleMG remplace AddAtomMG
+    "EVOMOL_ADD_ATOM": False,      # True : AddAtomMG d'evomol ; False : celui de newmut (ex-AppendAtomRuleMG)
     "SUBSTITUTION_SHIFT": True,    # SubstituteShiftMG remplace SubstituteAtomMG
     "SUBSTITUTION_NO_SHIFT": False,  # SubstituteShiftMG sans abaisser ni déplacer de double liaison
     "R2_HETERO": False,            # R2 aussi pour N–N, N–O, O–O (deux atomes sans liaison multiple)
     "R2_HETERO_OUTSIDE_RINGS": False,  # avec R2_HETERO : seulement hors cycle
+    "RULES_VERSION": "V1",         # règles : "V1" (R2a, R2b, R2c, R5 = au moins 2 H) ou "V0" (Regle_V0, avant le 2026-10-16)
+    "R4B": False,                  # règle R4b (grands cycles plans), désactivée par défaut
     "GRAFT": True,                 # GraftFragmentMG
     "ANNELATE": True,              # AnnelateMG
     "FLIP_PATH": True,             # FlipAlternatingPathMG
@@ -109,11 +111,17 @@ def make_config(**overrides: Any) -> dict[str, Any]:
 _FILTERS: dict[tuple, list[Evaluation]] = {}
 
 
+# anciens noms de mutation (configurations et marches déjà faites) → nom actuel
+ALIASES = {"AppendAtomRuleMG": "AddAtomMG"}  # AppendAtomRuleMG devenue l'AddAtomMG de newmut le 2026-10-19
+
+
 def action_classes(names: list[str] | None) -> list[type[Action]]:
-    """Types de mutation de l'espace d'action configuré, par nom (None : tous)."""
+    """Types de mutation de l'espace d'action configuré, par nom (None : tous). Un ancien nom (ALIASES) donne la
+    mutation qui le remplace."""
     space = {action.class_name(): action for action in MolecularGraph.action_space}
     if names is None:
         return list(space.values())
+    names = list(dict.fromkeys(ALIASES.get(name, name) for name in names))
     unknown = [name for name in names if name not in space]
     if unknown:
         raise KeyError(f"Mutations absentes de l'espace d'action : {unknown}. Disponibles : {sorted(space)}")
@@ -131,7 +139,9 @@ def configure(config: dict[str, Any]) -> tuple[list[Evaluation], dict[str, Any]]
         with_add_group=config["WITH_ADD_GROUP"], with_remove_group=config["WITH_REMOVE_GROUP"],
         add_atom_multiple_bonds=config["ADD_ATOM_MULTIPLE_BONDS"],
         bond_change_by_one=config["BOND_CHANGE_BY_ONE"],
-        matrix_rules=config["MATRIX_RULES"], append_atom_rule=config["APPEND_ATOM_RULE"],
+        matrix_rules=config["MATRIX_RULES"],
+        # configurations d'avant le 2026-10-19 : APPEND_ATOM_RULE (AppendAtomRuleMG, devenue l'AddAtomMG de newmut)
+        evomol_add_atom=config.get("EVOMOL_ADD_ATOM", not config.get("APPEND_ATOM_RULE", True)),
         substitution_shift=config["SUBSTITUTION_SHIFT"], graft=config["GRAFT"], annelate=config["ANNELATE"],
         flip_path=config["FLIP_PATH"], aromatize=config["AROMATIZE"],
         graft_fragments=config["GRAFT_FRAGMENTS"], annelation_fragments=config["ANNELATION_FRAGMENTS"],
@@ -139,6 +149,7 @@ def configure(config: dict[str, Any]) -> tuple[list[Evaluation], dict[str, Any]]
         substitution_no_shift=config.get("SUBSTITUTION_NO_SHIFT", False),
         r2_hetero=config.get("R2_HETERO", False),
         r2_hetero_outside_rings=config.get("R2_HETERO_OUTSIDE_RINGS", False),
+        rules_version=config.get("RULES_VERSION", "V1"), r4b=config.get("R4B", False),
     )
     key = (config["FILTER_HUCKEL"], config["MAX_SP3"], config["FILTER_REALISM"],
            config["FILTER_HETERO"], config["MAX_RING_N"])
@@ -183,9 +194,9 @@ def run_walks(config: dict[str, Any], n_walks: int, out_dir: str, n_jobs: int | 
 
 
 # ==============================================================================
-#  DÉTAIL DES MUTATIONS (celui de pi_walk, avec AppendAtomRuleMG)
+#  DÉTAIL DES MUTATIONS (celui de pi_walk)
 # ==============================================================================
-# AppendAtomRuleMG est détaillée comme AddAtomMG (élément et ordre de la liaison créée)
+# AppendAtomRuleMG (marches faites avant le 2026-10-19) est détaillée comme AddAtomMG, qui la remplace
 DETAILED_ACTIONS = ["AddAtomMG", "AppendAtomRuleMG", "RemoveAtomMG", "ChangeBondMG"]
 
 
@@ -198,12 +209,12 @@ def _details_one(task: tuple[dict[str, Any], int, str]) -> pd.DataFrame:
     rows = []
     for t in range(1, len(walk)):
         name = walk.action.iloc[t]
-        if name not in DETAILED_ACTIONS or name not in space:
+        if name not in DETAILED_ACTIONS or ALIASES.get(name, name) not in space:
             continue
         parent, child = Molecule(walk.smiles.iloc[t - 1]), walk.smiles.iloc[t]
         graph = parent.get_representation(MolecularGraph)
         action = None
-        for candidate in space[name].list_actions(parent):
+        for candidate in space[ALIASES.get(name, name)].list_actions(parent):
             try:
                 if candidate.apply_smiles() == child:
                     action = candidate
@@ -229,7 +240,8 @@ def _details_one(task: tuple[dict[str, Any], int, str]) -> pd.DataFrame:
 
 
 def mutation_details(out_dir: str | Path, n_jobs: int | None = None) -> pd.DataFrame:
-    """pi_walk.mutation_details pour les marches de ce module : détail de chaque AddAtomMG / AppendAtomRuleMG,
+    """pi_walk.mutation_details pour les marches de ce module : détail de chaque AddAtomMG (ou AppendAtomRuleMG des
+    marches d'avant le 2026-10-19),
     RemoveAtomMG et ChangeBondMG. Écrit out_dir/mutations_detail.csv et le renvoie."""
     out_dir = Path(out_dir)
     config = json.loads((out_dir / "config.json").read_text())
@@ -243,7 +255,7 @@ def mutation_details(out_dir: str | Path, n_jobs: int | None = None) -> pd.DataF
 
 
 def plot_mutation_details(experiments: dict[str, pd.DataFrame], save=None, min_label: float = 3.0) -> Any:
-    """pi_walk.plot_mutation_details, avec une barre de plus pour AppendAtomRuleMG."""
+    """pi_walk.plot_mutation_details, avec une barre de plus pour AppendAtomRuleMG (marches d'avant le 2026-10-19)."""
     detailed = pw.DETAILED_ACTIONS
     pw.DETAILED_ACTIONS = DETAILED_ACTIONS
     try:

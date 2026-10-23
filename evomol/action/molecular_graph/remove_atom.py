@@ -3,7 +3,8 @@ The action RemoveAtom consist in removing an atom from the molecular graph.
 The atom to remove is selected among the atoms that don't represent a bridge
 bond (i.e. their removal would not create multiple connected components in the
 molecular graph), that are not charged nor radical, and that none of their
-neighbors are radical or charged.
+neighbors are radical or charged. The molecule never goes below MIN_HEAVY_ATOMS
+heavy atoms (no empty molecule).
 """
 
 import networkx as nx
@@ -13,6 +14,9 @@ from evomol.action import Action
 from evomol.representation import MolecularGraph, Molecule
 
 from .action_molecular_graph import ActionMolGraph
+
+# a molecule never goes below this number of heavy atoms (1: never empty)
+MIN_HEAVY_ATOMS = 1
 
 
 class RemoveAtomMG(ActionMolGraph):
@@ -66,6 +70,10 @@ class RemoveAtomMG(ActionMolGraph):
         """
 
         mol_graph: MolecularGraph = molecule.get_representation(MolecularGraph)
+
+        # the molecule never goes below MIN_HEAVY_ATOMS heavy atoms
+        if mol_graph.nb_atoms <= MIN_HEAVY_ATOMS:
+            return []
 
         # impossible to remove the atoms whose removal would create
         # multiple connected components in the molecular graph

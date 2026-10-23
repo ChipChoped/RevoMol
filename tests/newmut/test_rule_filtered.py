@@ -6,6 +6,7 @@ import pytest
 
 from evomol import default_parameters as dp
 from evomol.action import molecular_graph as mg
+from evomol.newmut import matrix_rules as mr
 from evomol.newmut import rule_filtered as rf
 from evomol.newmut.matrix_rules import result_is_allowed
 from evomol.representation import MolecularGraph, Molecule
@@ -80,12 +81,30 @@ def test_listed_actions_respect_rules(action_class: type, smiles: str) -> None:
 
 
 def test_filtering() -> None:
-    """Toluene: a C added on the methyl creates two bonded s carbons."""
+    """Toluene (V1): a C added on the methyl creates two bonded s carbons (R2a),
+    an O a Cs-OH (R2b); an O on a ring carbon is allowed."""
     molecule = Molecule("Cc1ccccc1")
     wrapper = rf.rule_filtered(mg.AddAtomMG)
     listed = {(a.index_atom, a.atom_type) for a in wrapper.list_actions(molecule)}
     assert (0, "C") not in listed
-    assert (0, "O") in listed
+    assert (0, "O") not in listed
+    assert (2, "O") in listed
+
+
+def test_filtering_v0() -> None:
+    """Toluene (V0): a C added on the methyl creates two bonded s carbons, an O
+    is allowed."""
+    mr.RULES_VERSION = "V0"
+    rf.clear_cache()
+    try:
+        molecule = Molecule("Cc1ccccc1")
+        wrapper = rf.rule_filtered(mg.AddAtomMG)
+        listed = {(a.index_atom, a.atom_type) for a in wrapper.list_actions(molecule)}
+        assert (0, "C") not in listed
+        assert (0, "O") in listed
+    finally:
+        mr.RULES_VERSION = "V1"
+        rf.clear_cache()
 
 
 def test_cache_same_result() -> None:

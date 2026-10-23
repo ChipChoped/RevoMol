@@ -113,3 +113,20 @@ external_data/
 notebooks/random_walk/ancien/
 notebooks/random_walk/results/
 output/*
+parametre/
+
+# newmut V1 : pas commité, sauf les modules importés par le code V2
+# (regles_V2.py -> parametrage_regles ; synthese_familles_V2.py -> synthese_familles, colorer_synthese)
+teste_newmut_V1/*
+!teste_newmut_V1/parametrage_regles.py
+!teste_newmut_V1/synthese_familles.py
+!teste_newmut_V1/colorer_synthese.py
+notebooks/random_walk/newmut_time_V1.ipynb
+notebooks/random_walk/newmut_walk_V1.ipynb
+
+# newmut V2 : résultats et données
+teste_newmut_V2/Walk_V2/resultats/
+teste_newmut_V2/ChEMBL_comparaison/resultats/
+teste_newmut_V2/ChEMBL_comparaison/donnees/
+teste_newmut_V2/Mutation_V2/exhaustif/
+teste_newmut_V2/Mutation_V2/parametre_*/

@@ -208,7 +208,7 @@ def test_actions_add_atom(smiles: str, check_smiles: list[str]) -> None:
         ),
         pytest.param(
             "C",
-            [""],
+            [],  # the last atom is never removed (MIN_HEAVY_ATOMS = 1)
             id="RemoveAtom on C",
         ),
         pytest.param(

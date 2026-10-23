@@ -45,7 +45,7 @@ from random_walk_core import random_walk
 
 OUT = Path("notebooks/random_walk/results/newmut_walk/compare_time")
 
-NEW_OPTIONS = ["MATRIX_RULES", "APPEND_ATOM_RULE", "SUBSTITUTION_SHIFT", "GRAFT", "ANNELATE", "FLIP_PATH", "AROMATIZE",
+NEW_OPTIONS = ["MATRIX_RULES", "SUBSTITUTION_SHIFT", "GRAFT", "ANNELATE", "FLIP_PATH", "AROMATIZE",
                "INSERT_CARBON_KEEP_DOUBLE"]
 BASE = {
     "START": "c1ccccc1", "BURN_IN_STEPS": 0, "MAX_ATOMS": 38, "ACCEPTED_ATOMS": ["C", "O", "N"],
@@ -54,8 +54,9 @@ BASE = {
     "WITH_ADD_GROUP": False, "WITH_REMOVE_GROUP": False,
 }
 CONDITIONS = {
-    "anciennes": nw.make_config(**BASE, **{option: False for option in NEW_OPTIONS}),
-    "nouvelles": nw.make_config(**BASE, **{option: True for option in NEW_OPTIONS}),
+    # anciennes : AddAtomMG d'evomol ; nouvelles : AddAtomMG de newmut (ex-AppendAtomRuleMG)
+    "anciennes": nw.make_config(**BASE, EVOMOL_ADD_ATOM=True, **{option: False for option in NEW_OPTIONS}),
+    "nouvelles": nw.make_config(**BASE, EVOMOL_ADD_ATOM=False, **{option: True for option in NEW_OPTIONS}),
 }
 COLORS = {"anciennes": "#2a78d6", "nouvelles": "#eb6834"}  # palette de pi_walk (bleu, orange)
 

@@ -18,6 +18,14 @@ substitution_no_shift=True)): only the simple substitutions are kept (the new
 element accepts the sum of the row), as in SubstituteAtomMG; the rules still
 apply.
 
+Raised bond (SubstituteShiftMG.raise_bonds = True by default;
+setup_newmut_action_space(substitution_raise=False) turns it off): when the new
+element accepts more bonds than the row holds (O s -> N, O s -> C, N s -> C,
+O= -> N, N= -> C...), one bond of the atom can also go up, towards a neighbour
+that has enough hydrogens (C-O-C -> C-N=C, C-O-C -> C-C=C, O=C -> N#C...): one
+action per bond and per raise, kept if it creates no new violation of the
+matrix rules, besides the substitution without raise.
+
 The final state is computed when the actions are listed; apply_action replays
 the substitution and the bond changes.
 """
@@ -34,6 +42,7 @@ from evomol.action import Action
 from evomol.action.molecular_graph.action_molecular_graph import ActionMolGraph
 from evomol.newmut.matrix_rules import (
     VALENCE_ELECTRONS,
+    implicit_h,
     matrices_allowed,
     max_valence,
     to_matrix,
@@ -155,13 +164,38 @@ def substitute_with_shift(
     return None
 
 
+def raise_states(
+    types: Sequence[str], matrix: np.ndarray, atom: int, element: str
+) -> list[tuple[int, int, int]]:
+    """Bonds that can go up after substituting atom by element: (atom,
+    neighbour, new order) for each neighbour and each raise allowed by the
+    free valence of the new element and the hydrogens of the neighbour."""
+    n = len(types)
+    row_sum = sum(int(matrix[atom, j]) for j in range(n) if j != atom)
+    spare = max_valence(element) - row_sum
+    out: list[tuple[int, int, int]] = []
+    if spare <= 0:
+        return out
+    for j in range(n):
+        order = int(matrix[atom, j])
+        if j == atom or order == 0 or order >= 3:
+            continue
+        free_j = implicit_h(types[j], sum(int(matrix[j, k]) for k in range(n) if k != j))
+        for up in range(1, min(spare, free_j, 3 - order) + 1):
+            out.append((min(atom, j), max(atom, j), order + up))
+    return out
+
+
 class SubstituteShiftMG(RuleCheckedMixin, ActionMolGraph):
     """
-    Substitute an atom, shifting the double bonds if needed.
+    Substitute an atom, shifting the double bonds if needed, or raising one
+    bond when the new element accepts more bonds.
     """
 
     # False: no lowered bond order, only the simple substitutions
     shift_bonds: bool = True
+    # True: also the substitutions where one bond of the atom goes up
+    raise_bonds: bool = True
 
     def __init__(
         self,
@@ -192,6 +226,7 @@ class SubstituteShiftMG(RuleCheckedMixin, ActionMolGraph):
             self.molecule == other.molecule
             and self.atom_idx == other.atom_idx
             and self.new_type == other.new_type
+            and self.bond_changes == other.bond_changes
         )
 
     @override
@@ -226,7 +261,9 @@ class SubstituteShiftMG(RuleCheckedMixin, ActionMolGraph):
     @classmethod
     def list_unchecked_actions(cls, molecule: Molecule) -> list[Action]:
         """For each uncharged atom and each other accepted element, the
-        substitution with the first allowed shift of the double bonds."""
+        substitution with the first allowed shift of the double bonds; with
+        raise_bonds, also each allowed substitution where one bond of the atom
+        goes up."""
         mol_graph: MolecularGraph = molecule.get_representation(MolecularGraph)
         types, matrix = to_matrix(mol_graph)
 
@@ -250,12 +287,28 @@ class SubstituteShiftMG(RuleCheckedMixin, ActionMolGraph):
                 result = substitute_with_shift(
                     types, matrix, atom, element, allowed, cls.shift_bonds
                 )
-                if result is None:
+                if result is not None:
+                    new_matrix = result[1]
+                    changes = tuple(
+                        (int(i), int(j), int(new_matrix[i, j]))
+                        for i, j in zip(*np.nonzero(np.triu(new_matrix != matrix, 1)))
+                    )
+                    action_list.append(SubstituteShiftMG(molecule, atom, element, changes))
+                if not cls.raise_bonds:
                     continue
-                new_matrix = result[1]
-                changes = tuple(
-                    (int(i), int(j), int(new_matrix[i, j]))
-                    for i, j in zip(*np.nonzero(np.triu(new_matrix != matrix, 1)))
-                )
-                action_list.append(SubstituteShiftMG(molecule, atom, element, changes))
+                new_types = list(types)
+                new_types[atom] = element
+                for i, j, order in raise_states(types, matrix, atom, element):
+                    new_matrix = np.array(matrix, dtype=np.int64)
+                    new_matrix[atom, atom] = VALENCE_ELECTRONS.get(element, 0)
+                    new_matrix[i, j] = new_matrix[j, i] = order
+                    ok = (
+                        allowed(new_types, new_matrix)
+                        if allowed is not None
+                        else matrices_allowed(types, matrix, new_types, new_matrix)
+                    )
+                    if ok:
+                        action_list.append(
+                            SubstituteShiftMG(molecule, atom, element, ((i, j, order),))
+                        )
         return action_list

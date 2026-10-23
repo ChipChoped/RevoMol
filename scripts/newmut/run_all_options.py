@@ -92,7 +92,6 @@ def main() -> None:
     dp.setup_default_parameters(accepted_atoms=["C", "O", "N"], max_heavy_atoms=38)
     setup_newmut_action_space(
         matrix_rules=True,
-        append_atom_rule=True,
         substitution_shift=True,
         graft=True,
         annelate=True,

@@ -10,8 +10,10 @@ import pytest
 
 from evomol import default_parameters as dp
 from evomol.action import Action
+from evomol.newmut import matrix_rules as mr
+from evomol.newmut import rule_filtered as rf
 from evomol.newmut.annelate import AnnelateMG
-from evomol.newmut.append_atom_rule import AppendAtomRuleMG
+from evomol.newmut.add_atom import AddAtomMG
 from evomol.newmut.aromatize import AromatizeMG
 from evomol.newmut.flip_path import FlipAlternatingPathMG
 from evomol.newmut.fragments import parse_fragment
@@ -45,8 +47,11 @@ MOLECULES = [
     "c1ccc2c(c1)ccc1ccccc12",
 ]
 
+# AddAtomMG of newmut (formerly AppendAtomRuleMG): applies the rules itself
+ADD_RULE = AddAtomMG
+
 RULE_ACTIONS: list[type[Action]] = [
-    AppendAtomRuleMG,
+    ADD_RULE,
     SubstituteShiftMG,
     FlipAlternatingPathMG,
     AromatizeMG,
@@ -107,22 +112,35 @@ def test_unchecked_superset(action_class: type[Action], smiles: str) -> None:
 
 
 ########################################
-#            AppendAtomRule
+#   AddAtom (newmut)
 ########################################
-def test_append_atom_rule_empty() -> None:
+def test_add_atom_empty() -> None:
     """Empty molecule: any accepted atom."""
-    assert results(AppendAtomRuleMG, "") == {canonical(s) for s in "CONFS"}
+    assert results(ADD_RULE, "") == {canonical(s) for s in "CONFS"}
 
 
-def test_append_atom_rule_double_bond() -> None:
-    """A C added on an s carbon with >= 2 H is bonded by a double bond."""
-    produced = results(AppendAtomRuleMG, "Cc1ccccc1")
-    assert canonical("C=Cc1ccccc1") in produced
+def test_add_atom_on_s_carbon() -> None:
+    """On the CH3 of toluene: =CH2, #CH, =O, =NH, #N; never a C s on the C s (R2a)."""
+    produced = results(ADD_RULE, "Cc1ccccc1")
+    assert {canonical(s) for s in ("C=Cc1ccccc1", "C#Cc1ccccc1", "O=Cc1ccccc1", "N=Cc1ccccc1",
+                                   "N#Cc1ccccc1")} <= produced
     assert canonical("CCc1ccccc1") not in produced
 
 
-def test_append_atom_rule_single_hydrogen() -> None:
-    """An s carbon with a single H receives no carbon."""
+def test_add_atom_on_s_nitrogen() -> None:
+    """On the NH2 of aniline: =CH2, =O, =NH."""
+    produced = results(ADD_RULE, "Nc1ccccc1")
+    assert {canonical(s) for s in ("C=Nc1ccccc1", "O=Nc1ccccc1", "N=Nc1ccccc1")} <= produced
+
+
+def test_add_atom_triple_needs_three_hydrogens() -> None:
+    """No triple bond on a CH2 (2 hydrogens)."""
+    candidates = ADD_RULE.list_unchecked_actions(Molecule("C=CCc1ccccc1"))
+    assert not any(a.index_atom == 2 and a.bond_order == 3 for a in candidates)
+
+
+def test_add_atom_single_hydrogen() -> None:
+    """An s carbon with a single H receives no carbon (never a C by a single bond on an s carbon)."""
     molecule = Molecule("CC(C)(C)c1ccccc1C(C)c1ccccc1")
     mol_graph = molecule.get_representation(MolecularGraph)
     ch_index = next(
@@ -134,17 +152,19 @@ def test_append_atom_rule_single_hydrogen() -> None:
     )
     assert not any(
         action.index_atom == ch_index and action.atom_type == "C"
-        for action in AppendAtomRuleMG.list_actions(molecule)
+        for action in ADD_RULE.list_actions(molecule)
     )
 
 
-def test_append_atom_rule_max_size() -> None:
+def test_add_atom_max_size() -> None:
     """No atom added beyond Molecule.max_heavy_atoms."""
     try:
         dp.setup_default_parameters(accepted_atoms=["C", "O", "N", "F", "S"], max_heavy_atoms=6)
-        assert not AppendAtomRuleMG.list_actions(Molecule("c1ccccc1"))
+        rf.clear_cache()
+        assert not ADD_RULE.list_actions(Molecule("c1ccccc1"))
     finally:
         dp.setup_default_parameters(accepted_atoms=["C", "O", "N", "F", "S"], max_heavy_atoms=38)
+        rf.clear_cache()
 
 
 ########################################
@@ -200,9 +220,12 @@ def test_substitute_no_shift() -> None:
     toluene ring carbon -> O disappears (a double bond must be lowered)."""
     SubstituteShiftMG.shift_bonds = False
     try:
-        actions = SubstituteShiftMG.list_actions(Molecule("Cc1ccccc1"))
+        molecule = Molecule("Cc1ccccc1")
+        actions = SubstituteShiftMG.list_actions(molecule)
         assert not any(action.new_type == "O" and action.atom_idx != 0 for action in actions)
-        assert all(not action.bond_changes for action in actions)
+        # no bond lowered or shifted (a raised bond, raise_bonds, is still possible)
+        graph = molecule.get_representation(MolecularGraph)
+        assert all(order > graph.bond_order(i, j) for action in actions for i, j, order in action.bond_changes)
         assert any(action.new_type == "N" for action in actions)
     finally:
         SubstituteShiftMG.shift_bonds = True
@@ -372,11 +395,28 @@ def test_annelate_refused(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_r5_refuses_quaternary_carbon() -> None:
-    """R5: no O added on the CH of cumene (it would carry 4 heavy atoms)."""
-    molecule = Molecule("CC(C)c1ccccc1")
-    actions = AppendAtomRuleMG.list_actions(molecule)
-    assert not any(a.index_atom == 1 for a in actions)
-    assert any(a.index_atom == 0 for a in actions)
+    """R5 (V0): no O added on the CH of cumene (it would carry 4 heavy atoms)."""
+    mr.RULES_VERSION = "V0"
+    rf.clear_cache()
+    try:
+        molecule = Molecule("CC(C)c1ccccc1")
+        actions = ADD_RULE.list_actions(molecule)
+        assert not any(a.index_atom == 1 for a in actions)
+        assert any(a.index_atom == 0 for a in actions)
+    finally:
+        mr.RULES_VERSION = "V1"
+        rf.clear_cache()
+
+
+def test_r5_v1_refuses_third_heavy_atom() -> None:
+    """R5 (V1): no atom added by a single bond on the CH2 of allylbenzene (it
+    would stay an s carbon with 3 heavy atoms); atoms can still be added on the
+    ring. A double bond (=O) makes it a d carbon: allowed."""
+    molecule = Molecule("C=CCc1ccccc1")
+    actions = ADD_RULE.list_actions(molecule)
+    assert not any(a.index_atom == 2 and a.bond_order == 1 for a in actions)
+    assert any(a.index_atom == 2 and a.atom_type == "O" and a.bond_order == 2 for a in actions)
+    assert any(a.index_atom == 5 for a in actions)
 
 
 
@@ -405,3 +445,25 @@ def test_insert_carbon_keep_double_benzene() -> None:
 
     produced = results(rf.rule_filtered(InsertCarbonDoubleMG), "c1ccccc1")
     assert canonical("C1=CC=CCC=C1") in produced
+
+
+def test_substitute_raise_bond() -> None:
+    """Anisole: O replaced by N or C, the bond to the CH3 goes up (C=N-Ph, C=C-Ph,
+    C#C-Ph); not with raise_bonds = False."""
+    produced = results(SubstituteShiftMG, "COc1ccccc1")
+    expected = {canonical(s) for s in ("C=Nc1ccccc1", "C=Cc1ccccc1", "C#Cc1ccccc1")}
+    assert expected <= produced
+    try:
+        SubstituteShiftMG.raise_bonds = False
+        rf.clear_cache()
+        assert not expected & results(SubstituteShiftMG, "COc1ccccc1")
+    finally:
+        SubstituteShiftMG.raise_bonds = True
+        rf.clear_cache()
+
+
+def test_substitute_raise_needs_hydrogens() -> None:
+    """No raise towards an atom without hydrogen (the aromatic C of anisole)."""
+    actions = SubstituteShiftMG.list_unchecked_actions(Molecule("COc1ccccc1"))
+    raised = [a for a in actions if a.atom_idx == 1 and a.bond_changes]
+    assert raised and all(0 in pair[:2] for a in raised for pair in a.bond_changes)

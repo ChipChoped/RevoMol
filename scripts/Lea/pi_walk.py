@@ -48,7 +48,7 @@ from evomol.action import molecular_graph as mg
 from evomol.evaluation import Evaluation, EvaluationError, Huckel
 from evomol.evaluation.pi_systems import pi_systems  # PI_CHAIN_SIZE, PCT_PI_ATOMS
 from evomol.representation import MolecularGraph, Molecule
-from random_walk_core import random_walk
+from random_walk_core import UnreadableNeighbors, random_walk
 
 RDLogger.DisableLog("rdApp.*")
 
@@ -208,13 +208,16 @@ def run_walk(config: dict[str, Any], k: int, progress: Any = None) -> tuple[pd.D
 
     base = config["SEED"] if config["SEED"] is not None else random.SystemRandom().randrange(10**9)
     seed = base + 2 * k
+    # voisins que RDKit ne sait pas relire : refusés, comptés, SMILES écrits dans le meta.json
+    unreadable = UnreadableNeighbors(label=f"marche {k} : ")
     if config["BURN_IN_STEPS"]:
         start = random_walk(config["START"], config["BURN_IN_STEPS"], filters, seed=seed,
-                            on_step=on_step, **walk_kwargs)[-1]["smiles"]
+                            on_step=on_step, unreadable=unreadable, **walk_kwargs)[-1]["smiles"]
     else:
         start = Molecule(config["START"]).get_representation(MolecularGraph).canonical_smiles
     t1 = time.perf_counter()
-    rows = random_walk(start, config["N_STEPS"], filters, seed=seed + 1, on_step=on_step, **walk_kwargs)
+    rows = random_walk(start, config["N_STEPS"], filters, seed=seed + 1, on_step=on_step, unreadable=unreadable,
+                       **walk_kwargs)
     t2 = time.perf_counter()
     walk = pd.DataFrame(rows)[["step", "smiles", "action", "valid", "neighborhood_size"]]
     by_smiles = {s: molecule_values(s, config.get("SULFUR_PI_RULE", True)) for s in walk.smiles.unique()}  # une fois par molécule distincte
@@ -224,7 +227,8 @@ def run_walk(config: dict[str, Any], k: int, progress: Any = None) -> tuple[pd.D
     meta = {"walk": k, "seed_burn_in": seed, "seed_walk": seed + 1, "walk_start": start,
             "filters": [f.name for f in filters],
             "actions": [a.__name__ for a in walk_kwargs["action_types"] or MolecularGraph.action_space],
-            "t_burn_in": t1 - t0, "t_walk": t2 - t1, "t_values": t3 - t2, "t_total": t3 - t0}
+            "t_burn_in": t1 - t0, "t_walk": t2 - t1, "t_values": t3 - t2, "t_total": t3 - t0,
+            "n_steps_done": int(walk.step.max()), "unreadable_neighbors": unreadable.as_dict()}
     return walk, meta
 
 
@@ -290,6 +294,13 @@ def run_walks(config: dict[str, Any], n_walks: int, out_dir: str | Path, n_jobs:
         pool.shutdown()
     print(f"terminé en {(time.perf_counter() - t0) / 60:.1f} min")
     write_counts(out_dir)  # décompte des atomes et des mutations des marches terminées
+    for k, meta in sorted(load_meta(out_dir).items()):  # voisins illisibles par RDKit, une ligne par marche
+        unread = meta.get("unreadable_neighbors") or {}
+        if unread.get("n"):
+            stop = (f", marche arrêtée au pas {unread['stopped_at_step']}" if unread.get("stopped_at_step") is not None
+                    else "")
+            print(f"marche {k} : {unread['n']} voisins illisibles par RDKit ({len(unread['smiles'])} SMILES "
+                  f"différents, dans walk{k}_meta.json){stop}")
     for k, message in errors:
         print(f"ÉCHEC marche {k} : {message}")
     if errors:

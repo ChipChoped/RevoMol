@@ -21,6 +21,12 @@ type uniformly among the types that still have an eligible neighbor, then a
 neighbor uniformly among those produced by that type. Mutation types that
 produce many neighbors are then no longer over-represented in the walk.
 
+A neighbor that RDKit cannot read back (Molecule(smiles) raises, e.g. a
+KekulizeException on a very large fused system) is refused like a neighbor that
+fails the filters. The first one is reported by a message, the following ones
+are only counted (UnreadableNeighbors); after MAX_UNREADABLE of them the walk
+stops and returns the steps done so far.
+
 action_types restricts which mutation types are considered, independently of
 the globally configured MolecularGraph.action_space (set once for the process
 by config.apply_action_space / default_parameters.setup_default_action_space).
@@ -40,10 +46,59 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 # pylint: disable=wrong-import-position
 
+from rdkit import rdBase
+
 from evomol.action import Action, ActionError
 from evomol.evaluation import Evaluation, EvaluationError, is_valid_molecule
 from evomol.logging import get_logger
 from evomol.representation import MolecularGraph, Molecule
+
+
+# a walk stops after this number of neighbors that RDKit cannot read back
+MAX_UNREADABLE = 500
+
+
+class UnreadableNeighbors:
+    """Neighbors that RDKit cannot read back during a walk: number of times it
+    happened, count per SMILES, first error. Only the first one is reported by
+    a message."""
+
+    def __init__(self, label: str = "") -> None:
+        self.label = label
+        self.total = 0
+        self.smiles: dict[str, int] = {}
+        self.first_error: str | None = None
+        self.stopped_at_step: int | None = None
+
+    def add(self, smiles: str, exc: Exception) -> None:
+        self.total += 1
+        self.smiles[smiles] = self.smiles.get(smiles, 0) + 1
+        if self.first_error is None:
+            self.first_error = f"{type(exc).__name__}: {exc}"
+            print(f"{self.label}voisin illisible par RDKit, refusé ({self.first_error}) ; SMILES {smiles} ; "
+                  "les suivants sont seulement comptés (meta.json)", flush=True)
+
+    @property
+    def too_many(self) -> bool:
+        return self.total >= MAX_UNREADABLE
+
+    def as_dict(self) -> dict[str, Any]:
+        """Summary written in the meta.json of the walk."""
+        return {"n": self.total, "first_error": self.first_error, "stopped_at_step": self.stopped_at_step,
+                "max": MAX_UNREADABLE, "smiles": self.smiles}
+
+
+def read_neighbor(smiles: str, unreadable: UnreadableNeighbors | None) -> Molecule | None:
+    """Molecule of a neighbor, or None if RDKit cannot read it back (counted in
+    unreadable; raised again if unreadable is None)."""
+    try:
+        with rdBase.BlockLogs():  # sinon RDKit écrit une ligne à chaque échec
+            return Molecule(smiles)
+    except Exception as exc:  # pylint: disable=broad-except
+        if unreadable is None:
+            raise
+        unreadable.add(smiles, exc)
+        return None
 
 
 def neighbor_actions(
@@ -106,6 +161,7 @@ def _choose_by_type(
     only_valid: bool,
     count_valid_neighbors: bool,
     rng: random.Random,
+    unreadable: UnreadableNeighbors | None = None,
 ) -> tuple[tuple[str, Molecule] | None, str | None, int, int | None, dict[str, int]]:
     """Two-stage draw: a mutation type uniformly among the types having an
     eligible neighbor, then a neighbor uniformly among those of that type.
@@ -115,13 +171,13 @@ def _choose_by_type(
         calls, number of distinct valid neighbors (count_valid_neighbors
         only), rejected neighbors per mutation type).
     """
-    validity: dict[str, tuple[bool, Molecule]] = {}  # each SMILES validated once
+    validity: dict[str, tuple[bool, Molecule | None]] = {}  # each SMILES validated once
     rejected: dict[str, int] = {}
 
-    def check(smiles: str) -> tuple[bool, Molecule]:
+    def check(smiles: str) -> tuple[bool, Molecule | None]:
         if smiles not in validity:
-            mol = Molecule(smiles)
-            validity[smiles] = (is_valid_molecule(mol, filters), mol)
+            mol = read_neighbor(smiles, unreadable)  # None: unreadable, refused
+            validity[smiles] = (mol is not None and is_valid_molecule(mol, filters), mol)
         return validity[smiles]
 
     types = sorted(by_type)  # sorted: independent of PYTHONHASHSEED
@@ -130,7 +186,10 @@ def _choose_by_type(
             return None, None, 0, None, rejected
         name = rng.choice(types)
         smiles = rng.choice(sorted(by_type[name]))
-        return (smiles, Molecule(smiles)), name, 0, None, rejected
+        mol = read_neighbor(smiles, unreadable)
+        if mol is None:
+            return None, None, 0, None, rejected
+        return (smiles, mol), name, 0, None, rejected
 
     if count_valid_neighbors:
         valid: dict[str, list[str]] = {}
@@ -145,7 +204,7 @@ def _choose_by_type(
             return None, None, len(validity), n_valid, rejected
         name = rng.choice(sorted(valid))
         smiles = rng.choice(valid[name])
-        return (smiles, validity[smiles][1]), name, len(validity), n_valid, rejected
+        return (smiles, validity[smiles][1]), name, len(validity), n_valid, rejected  # type: ignore[return-value]
 
     # lazy: types in random order, neighbors of each type in random order, the
     # first valid one wins (same law as above, far fewer filter calls)
@@ -156,7 +215,7 @@ def _choose_by_type(
         for smiles in keys:
             ok, mol = check(smiles)
             if ok:
-                return (smiles, mol), name, len(validity), None, rejected
+                return (smiles, mol), name, len(validity), None, rejected  # type: ignore[return-value]
             rejected[name] = rejected.get(name, 0) + 1
     return None, None, len(validity), None, rejected
 
@@ -184,6 +243,7 @@ def random_walk(
     action_types: list[type[Action]] | None = None,
     on_step: Callable[[dict[str, Any]], None] | None = None,
     uniform_action_type: bool = False,
+    unreadable: UnreadableNeighbors | None = None,
 ) -> list[dict[str, Any]]:
     """Perform a random walk of n_steps mutations from start_smiles.
 
@@ -211,6 +271,9 @@ def random_walk(
         uniform_action_type: draw a mutation type uniformly first, then a
             neighbor of that type (no over-representation of the types
             producing many neighbors). False: original behaviour.
+        unreadable: record of the neighbors that RDKit cannot read back
+            (refused, counted; the walk stops after MAX_UNREADABLE of them).
+            None: a new record for this walk.
 
     Returns:
         list[dict]: one row per visited molecule (step 0 = start) with the
@@ -221,6 +284,8 @@ def random_walk(
     """
     rng = random.Random(seed)
     evaluations = evaluations or []
+    if unreadable is None:
+        unreadable = UnreadableNeighbors()
 
     start_canonical = Molecule(start_smiles).get_representation(
         MolecularGraph
@@ -247,6 +312,11 @@ def random_walk(
         on_step(rows[-1])
 
     for step in range(1, n_steps + 1):
+        if unreadable.too_many:
+            unreadable.stopped_at_step = step - 1
+            print(f"{unreadable.label}{unreadable.total} voisins illisibles par RDKit : marche arrêtée au pas "
+                  f"{step - 1}", flush=True)
+            break
         if uniform_action_type:
             t0 = time.perf_counter()
             by_type = neighbor_actions_by_type(current, action_types)
@@ -257,7 +327,7 @@ def random_walk(
             neighborhood_size = len(set().union(*by_type.values())) if by_type else 0
             t1 = time.perf_counter()
             chosen, chosen_type, n_filter_calls, n_valid_neighbors, rejected = _choose_by_type(
-                by_type, filters, only_valid, count_valid_neighbors, rng
+                by_type, filters, only_valid, count_valid_neighbors, rng, unreadable
             )
             if chosen is None:
                 action_name = "restart"
@@ -288,9 +358,9 @@ def random_walk(
         if only_valid and count_valid_neighbors:
             valid: list[tuple[str, Molecule]] = []
             for smiles in keys:
-                mol = Molecule(smiles)
+                mol = read_neighbor(smiles, unreadable)
                 n_filter_calls += 1
-                if is_valid_molecule(mol, filters):
+                if mol is not None and is_valid_molecule(mol, filters):
                     valid.append((smiles, mol))
                 else:
                     name = neighbors[smiles].class_name()
@@ -300,15 +370,16 @@ def random_walk(
                 chosen = rng.choice(valid)
         elif only_valid:
             for smiles in keys:
-                mol = Molecule(smiles)
+                mol = read_neighbor(smiles, unreadable)
                 n_filter_calls += 1
-                if is_valid_molecule(mol, filters):
+                if mol is not None and is_valid_molecule(mol, filters):
                     chosen = (smiles, mol)
                     break
                 name = neighbors[smiles].class_name()
                 rejected[name] = rejected.get(name, 0) + 1
         elif keys:
-            chosen = (keys[0], Molecule(keys[0]))
+            mol = read_neighbor(keys[0], unreadable)
+            chosen = (keys[0], mol) if mol is not None else None
 
         if chosen is None:
             action_name = "restart"
