@@ -205,7 +205,7 @@ def get_roulette_wheel_cycles_restricted_neighborhood(neighborhood: list[tuple[s
 
     # Calculate the softmax probabilities based on the number of Bridgehead and Spiro atoms
     scores = []
-    for bridgehead_count, spiro_count, ring_count in bridgehead_spiro_counts:
+    for ring_count in bridgehead_spiro_counts: # bridgehead_count, spiro_count,
         # Calculate a score that penalizes higher counts of Bridgehead and Spiro atoms
         # score = 0 if bridgehead_count < max_bridgehead_atoms else bridgehead_count - max_bridgehead_atoms
         # score += 0 if spiro_count < max_spiro_atoms else spiro_count - max_spiro_atoms
