@@ -71,11 +71,6 @@ if __name__ == "__main__":
     else:
         path_actions = arguments.actions
 
-    if arguments.strategy == "first_improv":
-        seed: str = str(arguments.seed) + "/"
-    else:
-        seed: str = ""
-
     if arguments.strategy != "random":
         if arguments.evaluation_function is None:
             raise Exception("You must specify the evaluation function to use for adaptive walks")
@@ -112,7 +107,7 @@ if __name__ == "__main__":
         path = ("./results/" + arguments.strategy + "_walk/" + only_valid_str + "/" + str(arguments.depth) + "/" +
                 action_wheel_str + cycle_wheel_str + beta_str + smiles + "/" +
                 str(path_actions).replace("', '", "_").replace("['", "")
-                .replace("']", "") + "/" + evaluation_function_str + seed)
+                .replace("']", "") + "/" + evaluation_function_str + str(arguments.seed) + "/")
 
         print()
         print(path)
@@ -124,7 +119,7 @@ if __name__ == "__main__":
                                 [QED, SAScore, LogP, PLogP, Silly_Walks, GCF, Realism],
                                 [Tanimoto, Levenshtein, GED, NormalizedGED],
                                 arguments.strategy, evaluation_function, arguments.aggregate_realism,
-                                arguments.only_valid, path, seed, arguments.soft_change_bond,
+                                arguments.only_valid, path, arguments.seed, arguments.soft_change_bond,
                                 arguments.depth, arguments.beta, arguments.action_wheel, arguments.cycle_wheel)
 
         print()
@@ -136,7 +131,7 @@ if __name__ == "__main__":
         #                         [QED, SAScore, LogP, PLogP, Silly_Walks, GCF, Realism],
         #                         [Tanimoto, Levenshtein, GED, NormalizedGED],
         #                         arguments.strategy, evaluation_function, arguments.aggregate_realism,
-        #                         arguments.only_valid, path, seed, arguments.soft_change_bond,
+        #                         arguments.only_valid, path, arguments.seed, arguments.soft_change_bond,
         #                         arguments.depth, arguments.beta))
         #
         # process.start()
