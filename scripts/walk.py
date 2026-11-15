@@ -502,7 +502,7 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
 
             random.Random(seed).shuffle(neighborhood)
 
-    if cycle_wheel:
+    if cycle_wheel and neighborhood:
         # Sort the neighborhood based on the number of Bridgehead and Spiro atoms in the molecule
         probabilities = get_roulette_wheel_cycles_restricted_neighborhood(neighborhood)
         neighborhood = [neighbor for _, neighbor in sorted(zip(probabilities, neighborhood), key=lambda x: x[0], reverse=True)]
@@ -591,15 +591,16 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
 
                     random.Random(seed).shuffle(neighborhood)
 
-                    if cycle_wheel:
-                        # Sort the neighborhood based on the number of Bridgehead and Spiro atoms in the molecule
-                        probabilities = get_roulette_wheel_cycles_restricted_neighborhood(neighborhood)
-                        neighborhood = [neighbor for _, neighbor in
-                                        sorted(zip(probabilities, neighborhood), key=lambda x: x[0], reverse=True)]
+                    if neighborhood:
+                        if cycle_wheel:
+                            # Sort the neighborhood based on the number of Bridgehead and Spiro atoms in the molecule
+                            probabilities = get_roulette_wheel_cycles_restricted_neighborhood(neighborhood)
+                            neighborhood = [neighbor for _, neighbor in
+                                            sorted(zip(probabilities, neighborhood), key=lambda x: x[0], reverse=True)]
 
-                    best_smiles, best_action, best_fitness, neighborhood_size, best_probability = \
-                        find_best_improvement(neighborhood, start_mol, fitness_function, aggregate_realism, beta,
-                                              probabilities if cycle_wheel else None, seed)
+                        best_smiles, best_action, best_fitness, neighborhood_size, best_probability = \
+                            find_best_improvement(neighborhood, start_mol, fitness_function, aggregate_realism, beta,
+                                                  probabilities if cycle_wheel else None, seed)
 
                 MolecularGraph.action_space = whole_action_space
 
@@ -630,13 +631,14 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
 
                     random.Random(seed).shuffle(neighborhood)
 
-                    if cycle_wheel:
-                        # Sort the neighborhood based on the number of Bridgehead and Spiro atoms in the molecule
-                        probabilities = get_roulette_wheel_cycles_restricted_neighborhood(neighborhood)
-                        neighborhood = [neighbor for _, neighbor in
-                                        sorted(zip(probabilities, neighborhood), key=lambda x: x[0], reverse=True)]
+                    if neighborhood:
+                        if cycle_wheel:
+                            # Sort the neighborhood based on the number of Bridgehead and Spiro atoms in the molecule
+                            probabilities = get_roulette_wheel_cycles_restricted_neighborhood(neighborhood)
+                            neighborhood = [neighbor for _, neighbor in
+                                            sorted(zip(probabilities, neighborhood), key=lambda x: x[0], reverse=True)]
 
-                    best_improvement = find_first_improvement(neighborhood, start_mol, fitness_function, aggregate_realism, beta)
+                        best_improvement = find_first_improvement(neighborhood, start_mol, fitness_function, aggregate_realism, beta)
 
                 MolecularGraph.action_space = whole_action_space
 
