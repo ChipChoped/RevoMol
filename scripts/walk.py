@@ -152,7 +152,6 @@ def set_roulette_wheel_action_space(molecule: Molecule, seed: int = 0) -> None:
                    [mg.ChangeBondMG, mg.CreateCycleMG, mg.BreakCycleMG, mg.IncrementBondMG, mg.DecrementBondMG]]
 
         roulette = rand.randint(0, len(action_space) - 1)
-        print(roulette)
 
         if roulette < len(actions):
             MolecularGraph.action_space = [rand.choice(actions)]
@@ -344,7 +343,7 @@ def find_best_improvement(neighborhood: list[tuple[str, list[Action]]], start_mo
 
         if aggregate_realism:
             start_fitness = (fitness_function.alpha * fitness_function.evaluate(start_mol)
-                            + beta * (1 - Silly_Walks.evaluate(start_mol)))
+                            + beta * Realism.evaluate(start_mol))
         else:
             start_fitness = fitness_function.evaluate(start_mol)
 
@@ -364,11 +363,20 @@ def find_best_improvement(neighborhood: list[tuple[str, list[Action]]], start_mo
 
                 if aggregate_realism:
                     neighbor_fitness = (fitness_function.alpha * fitness_function.evaluate(neighbor_mol)
-                                        + beta * (1 - Silly_Walks.evaluate(neighbor_mol)))
+                                        + beta * Realism.evaluate(neighbor_mol))
 
                     if neighbor_fitness > best_fitness:
-                        best_fitness = neighbor_fitness
-                        best_neighbor = neighbor
+                        if probabilities is not None:
+                            neighbor_probability = probabilities[neighborhood.index(neighbor)]
+
+                            if best_probability > neighbor_probability > random.Random(seed).random() or \
+                                neighbor_probability >= best_probability:
+                                    best_probability = neighbor_probability
+                                    best_fitness = neighbor_fitness
+                                    best_neighbor = neighbor
+                        else:
+                            best_fitness = neighbor_fitness
+                            best_neighbor = neighbor
                 else:
                     neighbor_fitness = fitness_function.evaluate(neighbor_mol)
 
@@ -400,7 +408,7 @@ def find_first_improvement(neighborhood: list[tuple[str, list[Action]]], start_m
 
     if aggregate_realism:
         start_fitness = (fitness_function.alpha * fitness_function.evaluate(start_mol)
-                         + beta * (1 - Silly_Walks.evaluate(start_mol)))
+                         + beta * Realism.evaluate(start_mol))
     else:
         start_fitness = fitness_function.evaluate(start_mol)
 
@@ -416,7 +424,7 @@ def find_first_improvement(neighborhood: list[tuple[str, list[Action]]], start_m
 
             if aggregate_realism:
                 neighbor_fitness = (fitness_function.alpha * fitness_function.evaluate(neighbor_mol)
-                                    + beta * (1 - Silly_Walks.evaluate(neighbor_mol)))
+                                    + beta * Realism.evaluate(neighbor_mol))
 
                 if neighbor_fitness > best_fitness:
                     best_fitness = neighbor_fitness
@@ -526,7 +534,7 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
 
         if aggregate_realism:
             start_fitness = (fitness_function.alpha * fitness_function.evaluate(start_mol)
-                             + beta * (1 - Silly_Walks.evaluate(start_mol)))
+                             + beta * Realism.evaluate(start_mol))
         else:
             start_fitness = fitness_function.evaluate(start_mol)
 
@@ -729,7 +737,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
             set_plogp_values(start_mol)
 
         start_fitness: float = (evaluation_function.alpha * evaluation_function.evaluate(start_mol)
-                            + beta * (1 - Silly_Walks.evaluate(start_mol)))\
+                            + beta * Realism.evaluate(start_mol))\
             if aggregate_realism else evaluation_function.evaluate(start_mol)
 
         plateau: list[int] = []
@@ -756,7 +764,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
         cycle_fitness_writer.writerow(cycle_fitness_csv_row)
 
         if aggregate_realism:
-            walk_csv_row.append(evaluation_function.name + "-Silly_Walks")
+            walk_csv_row.append(evaluation_function.name + "-Realism")
 
         if depth == 1:
             walk_csv_row.extend(["action", "action_context", "neighborhood_size"])
@@ -781,7 +789,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
             walk_csv_row.append(str(fitnesses[function_name][0]))
 
         if aggregate_realism:
-            print(evaluation_function.name + "-Silly_Walks:", start_fitness)
+            print(evaluation_function.name + "-Realism:", start_fitness)
 
             walk_csv_row.append(str(start_fitness))
             aggregation: float = start_fitness
@@ -856,7 +864,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
                             plateau_writer = csv.writer(plateau_file, lineterminator='\n')
 
                             if aggregate_realism:
-                                walk_csv_row.append(evaluation_function.name + "-Silly_Walks")
+                                walk_csv_row.append(evaluation_function.name + "-Realism")
 
                             row = ["step", "smiles", "start_smiles", "evaluation_function"]
                             row.extend([function.name for function in fitness_functions])
@@ -917,7 +925,7 @@ def walk(start_smiles: str, n_steps: int, action_space: list[Action],
 
             if aggregate_realism:
                 aggregation = neighbor_fitness
-                print(evaluation_function.name + "-Silly_Walks:", aggregation)
+                print(evaluation_function.name + "-Realism:", aggregation)
                 walk_csv_row.append(aggregation)
 
             if depth == 1:
