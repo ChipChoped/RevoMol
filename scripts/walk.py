@@ -479,6 +479,45 @@ def find_k_best_improvements(neighborhood: list[tuple[str, list[Action]]], start
                 improving_fitness[best_neighbor_index], len(neighborhood), weights[best_neighbor_index])
 
 
+def find_roulette_first_improvement(neighborhood: list[tuple[str, list[Action]]], start_mol: Molecule,
+                                    fitness_function: Function, aggregate_realism: bool = False,
+                                    beta: float = 1, seed: int = 0):
+    if "PLogP" in fitness_function.name:
+        set_plogp_values(start_mol)
+
+    if aggregate_realism:
+        start_fitness = (fitness_function.alpha * fitness_function.evaluate(start_mol)
+                         + beta * Realism.evaluate(start_mol))
+
+        neighborhood_fitness: list[float] = [(fitness_function.alpha * fitness_function.evaluate(Molecule(neighbor[0]))
+                                             + beta * Realism.evaluate(Molecule(neighbor[0])))
+                                            for neighbor in neighborhood]
+    else:
+        start_fitness = fitness_function.evaluate(start_mol)
+
+        neighborhood_fitness: list[float] = [fitness_function.evaluate(Molecule(neighbor[0])) for neighbor in neighborhood]
+
+    improving_neighbors: list[tuple[str, list[Action]]] =\
+        [neighbor for neighbor, fitness in zip(neighborhood, neighborhood_fitness)
+         if (fitness > start_fitness and fitness_function.name in ["QED", "LogP_Max", "PLogP_Max", "Realism"]) or \
+            (fitness < start_fitness and fitness_function.name in ["SAScore", "LogP", "PLogP", "Silly_Walks", "GCF"])]
+
+    improving_fitness: list[float] = [fitness for fitness in neighborhood_fitness
+         if (fitness > start_fitness and fitness_function.name in ["QED", "LogP_Max", "PLogP_Max", "Realism"]) or \
+            (fitness < start_fitness and fitness_function.name in ["SAScore", "LogP", "PLogP", "Silly_Walks", "GCF"])]
+
+    if len(improving_neighbors) == 0:
+        return "", None, 0, 0, 0
+
+    probabilities: Sequence[float] = get_roulette_wheel_cycles_restricted_neighborhood(improving_neighbors)
+
+    np.random.seed(seed)
+    best_neighbor_index = np.random.choice(list(range(len(improving_neighbors))), replace=False, p=probabilities)
+
+    return (improving_neighbors[best_neighbor_index][0], improving_neighbors[best_neighbor_index][1],
+            improving_fitness[best_neighbor_index], len(neighborhood), probabilities[best_neighbor_index])
+
+
 def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: str, aggregate_realism: bool = False,
                       only_valid: bool = True, depth: int = 1, beta: float = 1, seed: int = 0,
                       action_wheel: bool = False, cycle_wheel: bool = False) -> tuple[str, list[
