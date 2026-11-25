@@ -362,17 +362,8 @@ def find_best_improvement(neighborhood: list[tuple[str, list[Action]]], start_mo
                                         + beta * Realism.evaluate(neighbor_mol))
 
                     if neighbor_fitness > best_fitness:
-                        if probabilities is not None:
-                            neighbor_probability = probabilities[neighborhood.index(neighbor)]
-
-                            if best_probability > neighbor_probability > random.Random(seed).random() or \
-                                neighbor_probability >= best_probability:
-                                    best_probability = neighbor_probability
-                                    best_fitness = neighbor_fitness
-                                    best_neighbor = neighbor
-                        else:
-                            best_fitness = neighbor_fitness
-                            best_neighbor = neighbor
+                        best_fitness = neighbor_fitness
+                        best_neighbor = neighbor
                 else:
                     neighbor_fitness = fitness_function.evaluate(neighbor_mol)
 
