@@ -3,8 +3,9 @@ import random
 import time
 from multiprocessing import Pool, Value, Array, Lock, Process
 from multiprocessing.sharedctypes import Synchronized
-from typing import cast, Tuple, Any
+from typing import cast, Tuple, Any, Sequence
 
+import numpy as np
 from numpy import ndarray
 from rdkit import Chem
 from rdkit.Chem import rdMolDescriptors
@@ -335,9 +336,8 @@ def find_highest_fitness(lock: Lock, neighbors_indexes: list[int], neighborhood:
 
 
 def find_best_improvement(neighborhood: list[tuple[str, list[Action]]], start_mol: Molecule,
-                          fitness_function: Function, aggregate_realism: bool = False, beta: float = 1,
-                          probabilities: list[float] | None = None, seed: int = 0)\
-        -> tuple[str, list[Action] | None, float, int, float | None]:
+                          fitness_function: Function, aggregate_realism: bool = False, beta: float = 1)\
+        -> tuple[str, list[Action] | None, float, int]:
         if "PLogP" in fitness_function.name:
             set_plogp_values(start_mol)
 
@@ -349,10 +349,6 @@ def find_best_improvement(neighborhood: list[tuple[str, list[Action]]], start_mo
 
         best_neighbor: tuple[str, list[Action] | None] = ("", None)
         best_fitness: float = start_fitness
-
-        if probabilities is not None:
-            best_probability: float = probabilities[0]
-            neighbor_probability: float
 
         for neighbor in neighborhood:
             if neighbor[0] != "":
@@ -384,20 +380,10 @@ def find_best_improvement(neighborhood: list[tuple[str, list[Action]]], start_mo
                         and neighbor_fitness > best_fitness) or \
                         (fitness_function.name in ["SAScore", "LogP", "PLogP", "Silly_Walks", "GCF"]
                          and neighbor_fitness < best_fitness):
-                        if probabilities is not None:
-                            neighbor_probability = probabilities[neighborhood.index(neighbor)]
+                        best_fitness = neighbor_fitness
+                        best_neighbor = neighbor
 
-                            if best_probability > neighbor_probability > random.Random(seed).random() or \
-                                neighbor_probability >= best_probability:
-                                    best_probability = neighbor_probability
-                                    best_fitness = neighbor_fitness
-                                    best_neighbor = neighbor
-                        else:
-                            best_fitness = neighbor_fitness
-                            best_neighbor = neighbor
-
-        return (best_neighbor[0], best_neighbor[1], best_fitness, len(neighborhood),
-                best_probability if probabilities is not None else None)
+        return best_neighbor[0], best_neighbor[1], best_fitness, len(neighborhood)
 
 
 def find_first_improvement(neighborhood: list[tuple[str, list[Action]]], start_mol: Molecule,
@@ -445,19 +431,76 @@ def find_first_improvement(neighborhood: list[tuple[str, list[Action]]], start_m
     return best_neighbor[0], best_neighbor[1], best_fitness, len(neighborhood)
 
 
+def find_k_best_improvements(neighborhood: list[tuple[str, list[Action]]], start_mol: Molecule,
+                             fitness_function: Function, aggregate_realism: bool = False, beta: float = 1,
+                             seed: int = 0) -> tuple[str, list[Action] | None, float, int, float]:
+    if "PLogP" in fitness_function.name:
+        set_plogp_values(start_mol)
+
+    if aggregate_realism:
+        start_fitness = (fitness_function.alpha * fitness_function.evaluate(start_mol)
+                         + beta * Realism.evaluate(start_mol))
+
+        neighborhood_fitness: list[float] = [(fitness_function.alpha * fitness_function.evaluate(Molecule(neighbor[0]))
+                                             + beta * Realism.evaluate(Molecule(neighbor[0])))
+                                            for neighbor in neighborhood]
+    else:
+        start_fitness = fitness_function.evaluate(start_mol)
+
+        neighborhood_fitness: list[float] = [fitness_function.evaluate(Molecule(neighbor[0])) for neighbor in neighborhood]
+
+    improving_neighbors: list[tuple[str, list[Action]]] =\
+        [neighbor for neighbor, fitness in zip(neighborhood, neighborhood_fitness)
+         if (fitness > start_fitness and fitness_function.name in ["QED", "LogP_Max", "PLogP_Max", "Realism"]) or \
+            (fitness < start_fitness and fitness_function.name in ["SAScore", "LogP", "PLogP", "Silly_Walks", "GCF"])]
+
+    improving_fitness: list[float] = [fitness for fitness in neighborhood_fitness
+         if (fitness > start_fitness and fitness_function.name in ["QED", "LogP_Max", "PLogP_Max", "Realism"]) or \
+            (fitness < start_fitness and fitness_function.name in ["SAScore", "LogP", "PLogP", "Silly_Walks", "GCF"])]
+
+    if len(improving_neighbors) == 0:
+        return "", None, 0, 0, 0
+    else:
+        k = len(improving_neighbors) // 2 if len(improving_neighbors) // 2 > 1 else 1
+
+        improving_neighbors.sort(key=lambda neighbor: fitness_function.evaluate(Molecule(neighbor[0])),
+                                 reverse=True if fitness_function.name in ["QED", "LogP_Max", "PLogP_Max", "Realism"] else False)
+        softmax_probabilities: Sequence[float] = get_roulette_wheel_cycles_restricted_neighborhood(improving_neighbors)
+        probabilities: Sequence[float] = [min(1, k * probability) for probability in softmax_probabilities]
+
+        l: int = 0
+        weights: list[float] = [0] * len(improving_neighbors)
+
+        for i in range(len(improving_neighbors)):
+            weights[i] = probabilities[i] * np.exp(l)
+
+            if probabilities[i] == 1:
+                break
+
+            l += np.log1p(-probabilities[i]) # Logarithmic adjustment
+
+        weights: list[float] = [weight / sum(weights) for weight in weights]
+
+        np.random.seed(seed)
+        best_neighbor_index = np.random.choice(list(range(len(improving_neighbors))), replace=False, p=weights)
+
+        return (improving_neighbors[best_neighbor_index][0], improving_neighbors[best_neighbor_index][1],
+                improving_fitness[best_neighbor_index], len(neighborhood), weights[best_neighbor_index])
+
+
 def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: str, aggregate_realism: bool = False,
                       only_valid: bool = True, depth: int = 1, beta: float = 1, seed: int = 0,
                       action_wheel: bool = False, cycle_wheel: bool = False) -> tuple[str, list[
-                                                                                               Action] | None, float, int] | \
+                                                                                               Action] | None, float | int, int] | \
                                                                                 tuple[str, list[tuple[str, list[
-                                                                                    Action]]] | None, Synchronized, int] | \
-                                                                                tuple[str, None, int, int] | tuple[
-                                                                                    str | list[Action] | tuple[
-                                                                                        str, list[Action]], str | list[
-                                                                                        Action] | tuple[
-                                                                                        str, list[Action]], Any, int] | \
+                                                                                    Action]]] | None, float | int, int | Any] | \
                                                                                 tuple[str, list[
-                                                                                               Action] | None, float, int, float]:
+                                                                                               Action] | None, float | int, int, float | int | None] | \
+                                                                                tuple[str | list[Action] | tuple[
+                                                                                    str, list[Action]], str | list[
+                                                                                          Action] | tuple[str, list[
+                                                                                    Action]], Any, int] | tuple[
+                                                                                    str, None, int, int]:
     """
     Get the neighbor with the highest fitness equal or higher than the starting molecule.
 
@@ -510,10 +553,10 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
 
             random.Random(seed).shuffle(neighborhood)
 
-    if cycle_wheel and neighborhood:
-        # Sort the neighborhood based on the number of Bridgehead and Spiro atoms in the molecule
-        probabilities = get_roulette_wheel_cycles_restricted_neighborhood(neighborhood)
-        neighborhood = [neighbor for _, neighbor in sorted(zip(probabilities, neighborhood), key=lambda x: x[0], reverse=True)]
+    # if cycle_wheel and neighborhood:
+    #     # Sort the neighborhood based on the number of Bridgehead and Spiro atoms in the molecule
+    #     probabilities = get_roulette_wheel_cycles_restricted_neighborhood(neighborhood)
+    #     neighborhood = [neighbor for _, neighbor in sorted(zip(probabilities, neighborhood), key=lambda x: x[0], reverse=True)]
 
     if len(neighborhood) == 0:
         return "", None, 0, 0
@@ -532,87 +575,81 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
         if "PLogP" in fitness_function.name:
             set_plogp_values(start_mol)
 
-        if aggregate_realism:
-            start_fitness = (fitness_function.alpha * fitness_function.evaluate(start_mol)
-                             + beta * Realism.evaluate(start_mol))
-        else:
-            start_fitness = fitness_function.evaluate(start_mol)
+        # if fitness_function.name == "Silly_Walks":
+        #     if cycle_wheel:
+        #         best_probability: Synchronized[float] = Value("d", probabilities[0])
+        #
+        #     best_index: Synchronized = Value("i", -1)
+        #     best_fitness: Synchronized = Value("d", start_fitness)
+        #     lock: Lock = Lock()  # type: ignore
+        #
+        #     max_processes = 4
+        #     processes: list[Process] = []
+        #
+        #     for n_process in range(max_processes):
+        #         if n_process == max_processes - 1:
+        #             neighbors_indexes = range(len(neighborhood) // max_processes * max_processes,
+        #                                       len(neighborhood))
+        #         else:
+        #             neighbors_indexes = range(len(neighborhood) // max_processes * n_process,
+        #                                       len(neighborhood) // max_processes * (n_process + 1))
+        #
+        #         process = Process(target=find_highest_fitness,
+        #                           args=(lock, neighbors_indexes, neighborhood, fitness_function,
+        #                                 best_index, best_fitness, best_probability if cycle_wheel else None,
+        #                                 probabilities if cycle_wheel else None, seed))
+        #         process.start()
+        #         processes.append(process)
+        #
+        #     for process in processes:
+        #         process.join()
+        #
+        #     if best_index.value == -1:
+        #         return "", None, 0, len(neighborhood)
+        #
+        #     return (neighborhood[best_index.value][0], neighborhood[best_index.value][1],
+        #             best_fitness.value, len(neighborhood))
+        # else:
+        best_fitness: float
+        best_smiles: str
+        best_action: list[tuple[str, list[Action]]] | None
 
-        if fitness_function.name == "Silly_Walks":
+        if not action_wheel:
+            return find_best_improvement(neighborhood, start_mol, fitness_function, aggregate_realism, beta)
+        else:
             if cycle_wheel:
-                best_probability: Synchronized[float] = Value("d", probabilities[0])
-
-            best_index: Synchronized = Value("i", -1)
-            best_fitness: Synchronized = Value("d", start_fitness)
-            lock: Lock = Lock()  # type: ignore
-
-            max_processes = 4
-            processes: list[Process] = []
-
-            for n_process in range(max_processes):
-                if n_process == max_processes - 1:
-                    neighbors_indexes = range(len(neighborhood) // max_processes * max_processes,
-                                              len(neighborhood))
-                else:
-                    neighbors_indexes = range(len(neighborhood) // max_processes * n_process,
-                                              len(neighborhood) // max_processes * (n_process + 1))
-
-                process = Process(target=find_highest_fitness,
-                                  args=(lock, neighbors_indexes, neighborhood, fitness_function,
-                                        best_index, best_fitness, best_probability if cycle_wheel else None,
-                                        probabilities if cycle_wheel else None, seed))
-                process.start()
-                processes.append(process)
-
-            for process in processes:
-                process.join()
-
-            if best_index.value == -1:
-                return "", None, 0, len(neighborhood)
-
-            return (neighborhood[best_index.value][0], neighborhood[best_index.value][1],
-                    best_fitness.value, len(neighborhood))
-        else:
-            best_fitness: float
-            best_smiles: str
-            best_action: list[tuple[str, list[Action]]] | None
-
-            if not action_wheel:
-                return find_best_improvement(neighborhood, start_mol, fitness_function, aggregate_realism, beta)
-            else:
                 best_smiles, best_action, best_fitness, neighborhood_size, best_probability =\
-                    find_best_improvement(neighborhood, start_mol, fitness_function, aggregate_realism, beta,
-                                          probabilities if cycle_wheel else None, seed)
+                find_k_best_improvements(neighborhood, start_mol, fitness_function, aggregate_realism, beta, seed)
+            else:
+                best_smiles, best_action, best_fitness, neighborhood_size =\
+                    find_best_improvement(neighborhood, start_mol, fitness_function, aggregate_realism, beta)
 
-                # Respin the wheel if neighborhood is null or if no better fitness can be found
-                while best_action is None and len(leftover_action_space) > 1:
-                    leftover_action_space.remove(MolecularGraph.action_space[0])
-                    MolecularGraph.action_space = leftover_action_space
-                    set_roulette_wheel_action_space(start_mol, seed)
+            # Respin the wheel if neighborhood is null or if no better fitness can be found
+            while best_action is None and len(leftover_action_space) > 1:
+                leftover_action_space.remove(MolecularGraph.action_space[0])
+                MolecularGraph.action_space = leftover_action_space
+                set_roulette_wheel_action_space(start_mol, seed)
 
-                    can_smiles = start_mol.get_representation(MolecularGraph).canonical_smiles
-                    possible_smiles, possible_actions = en.find_neighbors(Molecule(can_smiles), max_depth=1, info=True)
-                    neighborhood: list[tuple[str, list[Action]]] = [(Molecule(smiles).get_representation(MolecularGraph)
-                                                                     .canonical_smiles, [action])
-                                                                    for smiles, action in
-                                                                    zip(possible_smiles, possible_actions)]
+                can_smiles = start_mol.get_representation(MolecularGraph).canonical_smiles
+                possible_smiles, possible_actions = en.find_neighbors(Molecule(can_smiles), max_depth=1, info=True)
+                neighborhood: list[tuple[str, list[Action]]] = [(Molecule(smiles).get_representation(MolecularGraph)
+                                                                 .canonical_smiles, [action])
+                                                                for smiles, action in
+                                                                zip(possible_smiles, possible_actions)]
 
-                    random.Random(seed).shuffle(neighborhood)
+                random.Random(seed).shuffle(neighborhood)
 
-                    if neighborhood:
-                        if cycle_wheel:
-                            # Sort the neighborhood based on the number of Bridgehead and Spiro atoms in the molecule
-                            probabilities = get_roulette_wheel_cycles_restricted_neighborhood(neighborhood)
-                            neighborhood = [neighbor for _, neighbor in
-                                            sorted(zip(probabilities, neighborhood), key=lambda x: x[0], reverse=True)]
+                if neighborhood:
+                    if cycle_wheel:
+                        best_smiles, best_action, best_fitness, neighborhood_size, best_probability =\
+                        find_k_best_improvements(neighborhood, start_mol, fitness_function, aggregate_realism, beta, seed)
+                    else:
+                        best_smiles, best_action, best_fitness, neighborhood_size, _ =\
+                            find_best_improvement(neighborhood, start_mol, fitness_function, aggregate_realism, beta)
 
-                        best_smiles, best_action, best_fitness, neighborhood_size, best_probability = \
-                            find_best_improvement(neighborhood, start_mol, fitness_function, aggregate_realism, beta,
-                                                  probabilities if cycle_wheel else None, seed)
+            MolecularGraph.action_space = whole_action_space
 
-                MolecularGraph.action_space = whole_action_space
-
-            return best_smiles, best_action, best_fitness, len(neighborhood)
+        return best_smiles, best_action, best_fitness, neighborhood_size
     elif strategy == "first_improv":
         start_mol = Molecule(start_smiles)
 
