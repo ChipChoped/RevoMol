@@ -690,10 +690,16 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
             if not action_wheel:
                 return find_first_improvement(neighborhood, start_mol, fitness_function, aggregate_realism, beta)
             else:
-                best_improvement = find_first_improvement(neighborhood, start_mol, fitness_function, aggregate_realism, beta)
+                if cycle_wheel:
+                    best_smiles, best_action, best_fitness, neighborhood_size, _ =\
+                        find_roulette_first_improvement(neighborhood, start_mol, fitness_function,
+                                                        aggregate_realism, beta, seed)
+                else:
+                    best_smiles, best_action, best_fitness, neighborhood_size =\
+                        find_first_improvement(neighborhood, start_mol, fitness_function, aggregate_realism, beta)
 
                 # Respin the wheel if neighborhood is null or if no better fitness can be found
-                while best_improvement[1] is None and len(leftover_action_space) > 1:
+                while best_action is None and len(leftover_action_space) > 1:
                     leftover_action_space.remove(MolecularGraph.action_space[0])
                     MolecularGraph.action_space = leftover_action_space
                     set_roulette_wheel_action_space(start_mol, seed)
@@ -708,16 +714,16 @@ def get_best_neighbor(start_smiles: str, fitness_function: Function, strategy: s
 
                     if neighborhood:
                         if cycle_wheel:
-                            # Sort the neighborhood based on the number of Bridgehead and Spiro atoms in the molecule
-                            probabilities = get_roulette_wheel_cycles_restricted_neighborhood(neighborhood)
-                            neighborhood = [neighbor for _, neighbor in
-                                            sorted(zip(probabilities, neighborhood), key=lambda x: x[0], reverse=True)]
-
-                        best_improvement = find_first_improvement(neighborhood, start_mol, fitness_function, aggregate_realism, beta)
+                            best_smiles, best_action, best_fitness, neighborhood_size, _ =\
+                                find_roulette_first_improvement(neighborhood, start_mol, fitness_function,
+                                                                 aggregate_realism, beta, seed)
+                        else:
+                            best_smiles, best_action, best_fitness, neighborhood_size =\
+                                find_first_improvement(neighborhood, start_mol, fitness_function, aggregate_realism, beta)
 
                 MolecularGraph.action_space = whole_action_space
 
-                return best_improvement
+                return best_smiles, best_action, best_fitness, neighborhood_size
         elif depth > 1:
             root_neighborhood: list[tuple[str, list[Action]]] = neighborhood
             best_improvement: tuple[str, list[Action] | None, float, int] = ("", None, 0, len(root_neighborhood))
